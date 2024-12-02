@@ -2,6 +2,7 @@
 from openai import AsyncOpenAI
 import os
 from typing import Dict, Any, List
+from .prompt_manager import PromptManager
 
 
 class LLMClient:
@@ -10,35 +11,13 @@ class LLMClient:
         if not self.api_key:
             raise ValueError("OPENAI_API_KEY environment variable is not set")
         self.client = AsyncOpenAI(api_key=self.api_key)
+        self.prompt_manager = PromptManager()
 
     async def analyze_code_changes(self, changes: List[Dict]) -> Dict[str, Any]:
         """여러 파일의 코드 변경사항을 분석하여 개선점과 제안사항을 반환"""
         try:
-            # 모든 변경사항을 프롬프트에 포함
-            change_descriptions = []
-            for idx, change in enumerate(changes, start=1):
-                file_path = change["file_path"]
-                diff_content = change["diff"]
-                change_description = f"""
-변경사항 {idx}:
-파일: {file_path}
-변경사항:
-{diff_content}
-"""
-                change_descriptions.append(change_description)
-
-            all_changes_text = "\n".join(change_descriptions)
-
-            prompt = f"""아래 여러 코드 변경사항을 분석하고 각 파일별로 다음 항목들을 평가해주세요:
-1. 코드 품질 (가독성, 유지보수성)
-2. 성능 영향
-3. 잠재적 버그나 오류
-4. 개선 제안
-
-각 파일에 대해 별도로 분석해 주세요.
-
-{all_changes_text}
-"""
+            # 프롬프트 매니저를 사용하여 프롬프트 생성
+            prompt = self.prompt_manager.get_multiple_changes_prompt(changes)
 
             response = await self.client.chat.completions.create(
                 model="gpt-4o-mini",

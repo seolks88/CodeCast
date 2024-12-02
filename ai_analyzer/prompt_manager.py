@@ -60,3 +60,32 @@ class PromptManager:
 2. 메모리 사용 개선
 3. 실행 시간 단축
 4. 리소스 사용 효율화"""
+
+    @staticmethod
+    def get_multiple_changes_prompt(changes: List[Dict]) -> str:
+        """여러 파일의 변경사항에 대한 프롬프트 생성"""
+        change_descriptions = []
+        for idx, change in enumerate(changes, start=1):
+            file_path = change["file_path"]
+            diff_content = change["diff"]
+            change_description = f"""
+변경사항 {idx}:
+파일: {file_path}
+변경사항:
+{diff_content}
+"""
+            change_descriptions.append(change_description)
+
+        all_changes_text = "\n".join(change_descriptions)
+
+        prompt = f"""아래 여러 코드 변경사항을 분석하고 각 파일별로 다음 항목들을 평가해주세요:
+1. 코드 품질 (가독성, 유지보수성)
+2. 성능 영향
+3. 잠재적 버그나 오류
+4. 개선 제안
+
+각 파일에 대해 별도로 분석해 주세요.
+
+{all_changes_text}
+"""
+        return prompt

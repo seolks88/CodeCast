@@ -16,13 +16,11 @@ def is_subdirectory(path1, path2):
 
 def get_unique_directories(directories):
     """중복되지 않는 디렉토리 목록을 반환합니다."""
-    # 절대 경로로 변환하고 정렬 (긴 경로가 먼저 오도록)
     abs_dirs = [os.path.abspath(d) for d in directories]
     sorted_dirs = sorted(abs_dirs, key=len, reverse=True)
 
     unique_dirs = []
     for current_dir in sorted_dirs:
-        # 이미 포함된 상위 디렉토리가 있는지 확인
         is_subdirectory_of_existing = any(is_subdirectory(current_dir, existing_dir) for existing_dir in unique_dirs)
         if not is_subdirectory_of_existing:
             unique_dirs.append(current_dir)
@@ -34,19 +32,20 @@ async def scan_directory(directory, db_manager):
     """디렉토리 내 모든 파일을 비동기적으로 스캔합니다."""
     try:
         print(f"Starting scan of directory: {directory}")
-        handler = FileChangeHandler(db_manager)
+        handler = FileChangeHandler()
 
         scan_tasks = []
         for root, _, files in os.walk(directory):
             for filename in files:
-                try:
-                    file_path = os.path.join(root, filename)
-                    print(f"Processing file: {file_path}")
-                    scan_tasks.append(handler.check_file(file_path))
-                except Exception as e:
-                    print(f"Error processing {filename}: {e}")
+                file_path = os.path.join(root, filename)
+                scan_tasks.append(handler.check_file(file_path, db_manager))
 
-        await asyncio.gather(*scan_tasks)
+        results = await asyncio.gather(*scan_tasks)
+        for result in results:
+            if result:
+                file_path, file_info, diff = result
+                await db_manager.save_file_change(file_path, file_info, diff)
+
         print("Scan completed successfully")
     except Exception as e:
         print(f"Error during directory scan: {e}")

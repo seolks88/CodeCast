@@ -4,88 +4,52 @@ from typing import Dict, List
 
 class PromptManager:
     @staticmethod
-    def get_code_review_prompt(diff_content: str, file_path: str, context: Dict = None) -> str:
-        """코드 리뷰를 위한 프롬프트 생성"""
-        base_prompt = f"""다음 코드 변경사항에 대한 상세한 리뷰를 제공해주세요:
-
-파일: {file_path}
-
-변경사항:
-{diff_content}
-
-다음 관점에서 분석해주세요:
-1. 코드 품질
-   - 가독성
-   - 유지보수성
-   - 코드 스타일
-   
-2. 성능
-   - 시간 복잡도
-   - 공간 복잡도
-   - 리소스 사용
-   
-3. 안정성
-   - 잠재적 버그
-   - 예외 처리
-   - 엣지 케이스
-   
-4. 보안
-   - 취약점
-   - 안전하지 않은 작업
-   
-5. 개선 제안
-   - 구체적인 코드 개선 방안
-   - 대체 구현 방식
-   - 모범 사례
-"""
-
-        if context:
-            # 프로젝트 특정 컨텍스트 추가
-            base_prompt += f"\n\n추가 컨텍스트:\n{context}"
-
-        return base_prompt
-
-    @staticmethod
-    def get_optimization_prompt(file_content: str, file_path: str) -> str:
-        """성능 최적화를 위한 프롬프트 생성"""
-        return f"""다음 코드의 성능 최적화 방안을 제시해주세요:
-
-파일: {file_path}
-
-코드:
-{file_content}
-
-분석 관점:
-1. 알고리즘 최적화
-2. 메모리 사용 개선
-3. 실행 시간 단축
-4. 리소스 사용 효율화"""
-
-    @staticmethod
     def get_multiple_changes_prompt(changes: List[Dict]) -> str:
-        """여러 파일의 변경사항에 대한 프롬프트 생성"""
         change_descriptions = []
         for idx, change in enumerate(changes, start=1):
             file_path = change["file_path"]
             diff_content = change["diff"]
-            change_description = f"""
-변경사항 {idx}:
+            change_description = f"""변경사항 {idx}:
 파일: {file_path}
 변경사항:
-{diff_content}
-"""
+{diff_content}"""
             change_descriptions.append(change_description)
 
         all_changes_text = "\n".join(change_descriptions)
 
-        prompt = f"""아래 여러 코드 변경사항을 분석하고 각 파일별로 다음 항목들을 평가해주세요:
-1. 코드 품질 (가독성, 유지보수성)
-2. 성능 영향
-3. 잠재적 버그나 오류
-4. 개선 제안
-
-각 파일에 대해 별도로 분석해 주세요.
+        prompt = f"""오늘의 코드 개선 리포트입니다. 다음 코드 변경사항들을 분석하여 가장 중요한 3가지 개선점을 제시해주세요.
 
 {all_changes_text}
+
+각 개선점에 대해 다음 형식으로 상세히 설명해주세요:
+
+1. 개선점 제목
+현재 코드:
+```python
+# 현재 문제가 있는 코드 부분을 여기에 그대로 복사
+async def get_file_info(self, file_path):
+    if not os.path.exists(file_path):
+        print(f"File not found: {file_path}")
+        return None
+    # ... 문제가 있는 코드 부분 ...
+```
+
+개선된 코드:
+```python
+# 개선된 코드를 여기에 작성
+async def get_file_info(self, file_path):
+    if not os.path.exists(file_path):
+        logger.error(f"File not found: {file_path}")
+        return None
+    # ... 개선된 코드 ...
+```
+
+개선 이유:
+- 현재 코드의 문제점
+- 개선 시 얻을 수 있는 이점
+- 적용 시 주의사항
+
+[이하 동일한 형식으로 2, 3번 개선점 설명]
 """
+
         return prompt

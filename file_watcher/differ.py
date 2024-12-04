@@ -5,6 +5,10 @@ import os
 import platform
 import aiofiles
 import difflib
+import asyncio
+import sys
+
+from config.settings import Config
 
 
 class FileChangeHandler:
@@ -37,6 +41,9 @@ class FileChangeHandler:
 
     async def check_file(self, file_path, db_manager):
         """파일 변경을 비동기적으로 확인하고 변경사항 데이터와 diff를 반환합니다."""
+        if not self._should_process_file(file_path):
+            return None
+
         print(f"\nChecking file: {file_path}")
         file_info = await self.get_file_info(file_path)
         if file_info:
@@ -102,3 +109,53 @@ class FileChangeHandler:
         except Exception as e:
             print(f"Error generating diff: {e}")
             return None
+
+    def _should_process_file(self, file_path):
+        """파일을 처리해야 하는지 확인"""
+        # 절대 경로로 변환
+        abs_path = os.path.abspath(file_path)
+
+        # 무시할 디렉토리 패턴 확인
+        path_parts = abs_path.split(os.sep)
+        for ignore_pattern in Config.IGNORE_PATTERNS:
+            if ignore_pattern in path_parts:
+                print(f"Ignoring file in {ignore_pattern}: {abs_path}")
+                return False
+
+        # 파일 확장자 확인
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext not in Config.SUPPORTED_EXTENSIONS:
+            return False
+
+        return True
+
+    def _should_ignore_directory(self, dir_path):
+        """디렉토리를 무시해야 하는지 확인"""
+        path_parts = dir_path.split(os.sep)
+        return any(pattern in path_parts for pattern in Config.IGNORE_PATTERNS)
+
+    async def scan_directory(self, directory, db_manager):
+        """디렉토리 내 모든 파일을 비동기적으로 스캔합니다."""
+        try:
+            print(f"Starting scan of directory: {directory}")
+            scan_tasks = []
+
+            for root, dirs, files in os.walk(directory, topdown=True):
+                # 무시할 디렉토리 필터링 (dirs를 직접 수정)
+                dirs[:] = [d for d in dirs if not self._should_ignore_directory(os.path.join(root, d))]
+
+                for filename in files:
+                    file_path = os.path.join(root, filename)
+                    if self._should_process_file(file_path):
+                        scan_tasks.append(self.check_file(file_path, db_manager))
+
+            results = await asyncio.gather(*scan_tasks)
+            for result in results:
+                if result:
+                    file_path, file_info, diff = result
+                    await db_manager.save_file_change(file_path, file_info, diff)
+
+            print("Scan completed successfully")
+        except Exception as e:
+            print(f"Error during directory scan: {e}")
+            sys.exit(1)

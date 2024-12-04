@@ -24,7 +24,7 @@ class LLMClient:
                 messages=[
                     {
                         "role": "system",
-                        "content": "당신은 코드 리뷰 전문가입니다. Python, JavaScript 등 다양한 프로그래밍 언어에 대한 깊은 이해를 가지고 있으며, 코드 품질 향상을 위한 실용적인 제안을 제공합니다.",
+                        "content": "당신은 코드 리뷰 전문가입니다. 분석 결과는 간단명료하게 작성하되, 불필요한 줄바꿈을 최소화하여 작성해 주세요. 각 항목 사이에는 한 줄의 공백만 넣어주세요.",
                     },
                     {"role": "user", "content": prompt},
                 ],

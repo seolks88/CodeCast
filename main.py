@@ -8,14 +8,14 @@ from config.settings import Config
 
 
 def is_subdirectory(path1, path2):
-    """path1이 path2의 하위 디렉토리인지 또는 같은 디렉토리인지 확인"""
+    """Check if path1 is a subdirectory of path2 or the same directory."""
     path1 = os.path.abspath(path1)
     path2 = os.path.abspath(path2)
     return path1.startswith(path2)
 
 
 def get_unique_directories(directories):
-    """중복되지 않는 디렉토리 목록을 반환합니다."""
+    """Return a list of unique directories without duplicates."""
     abs_dirs = [os.path.abspath(d) for d in directories]
     sorted_dirs = sorted(abs_dirs, key=len, reverse=True)
 
@@ -26,30 +26,6 @@ def get_unique_directories(directories):
             unique_dirs.append(current_dir)
 
     return unique_dirs
-
-
-async def scan_directory(directory, db_manager):
-    """디렉토리 내 모든 파일을 비동기적으로 스캔합니다."""
-    try:
-        print(f"Starting scan of directory: {directory}")
-        handler = FileChangeHandler()
-
-        scan_tasks = []
-        for root, _, files in os.walk(directory):
-            for filename in files:
-                file_path = os.path.join(root, filename)
-                scan_tasks.append(handler.check_file(file_path, db_manager))
-
-        results = await asyncio.gather(*scan_tasks)
-        for result in results:
-            if result:
-                file_path, file_info, diff = result
-                await db_manager.save_file_change(file_path, file_info, diff)
-
-        print("Scan completed successfully")
-    except Exception as e:
-        print(f"Error during directory scan: {e}")
-        sys.exit(1)
 
 
 async def main():
@@ -71,9 +47,11 @@ async def main():
     db_manager = DatabaseManager(Config.DB_PATH)
     await db_manager.initialize()
 
+    handler = FileChangeHandler()
+
     for watch_dir in unique_dirs:
         print(f"\nProcessing directory: {watch_dir}")
-        await scan_directory(watch_dir, db_manager)
+        await handler.scan_directory(watch_dir, db_manager)
 
     await db_manager.cleanup_old_data()
     print("All directory scans completed")

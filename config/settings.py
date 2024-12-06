@@ -106,3 +106,7 @@ class Config:
         IGNORE_PATTERNS = set(pattern.strip() for pattern in env_ignore_patterns.split(",") if pattern.strip())
     else:
         IGNORE_PATTERNS = set(DEFAULT_IGNORE_PATTERNS)
+
+    # Voyage, Cohere API 키 설정
+    VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY")
+    COHERE_API_KEY = os.getenv("COHERE_API_KEY")

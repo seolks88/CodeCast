@@ -36,3 +36,14 @@ class LLMClient:
 
         except Exception as e:
             return {"error": str(e), "status": "error"}
+
+    async def analyze_text(self, user_prompt: str, temperature: float = 0.7) -> str:
+        """일반 텍스트 분석을 위한 메서드"""
+        response = await self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=temperature,
+        )
+        return response.choices[0].message.content

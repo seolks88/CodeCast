@@ -41,6 +41,36 @@ class DatabaseManager:
                     change_time TEXT DEFAULT (datetime('now')),
                     FOREIGN KEY (file_id) REFERENCES files (id) ON DELETE CASCADE
                 );
+
+                CREATE TABLE IF NOT EXISTS topics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT,
+                    raw_topic_text TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS agent_reports (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT,
+                    agent_type TEXT,
+                    topic_id INTEGER,
+                    report_content TEXT,
+                    summary TEXT,
+                    code_references TEXT,
+                    raw_topic_text TEXT,
+                    FOREIGN KEY (topic_id) REFERENCES topics (id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS user_learning_progress (
+                    concept TEXT PRIMARY KEY,
+                    last_mentioned_date TEXT,
+                    difficulty_level TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS user_habits (
+                    habit_name TEXT PRIMARY KEY,
+                    occurrences INTEGER,
+                    last_mentioned_date TEXT
+                );
             """)
 
     def _get_current_time(self):
@@ -163,15 +193,15 @@ class DatabaseManager:
             )
 
     async def get_file_info(self, file_path):
-        """파일의 기존 정보를 가져옵니다."""
+        """파일의 현재 정보를 가져옵니다."""
         async with aiosqlite.connect(self.db_path) as conn:
             await conn.execute("PRAGMA foreign_keys = ON;")
-            cursor = await conn.execute("SELECT content FROM files WHERE file_path = ?", (file_path,))
+            cursor = await conn.execute("SELECT content, file_hash FROM files WHERE file_path = ?", (file_path,))
             result = await cursor.fetchone()
             if result:
-                return {"content": result[0]}
-            else:
-                return None
+                content, file_hash = result
+                return {"content": content, "hash": file_hash, "full_content": content.decode("utf-8", errors="ignore")}
+            return None
 
     def get_recent_changes(self):
         """최근 변경사항 조회"""
@@ -179,7 +209,7 @@ class DatabaseManager:
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT f.file_path, fc.diff, fc.change_time
+                SELECT f.file_path, fc.diff, f.content, fc.change_time
                 FROM file_changes fc
                 JOIN files f ON f.id = fc.file_id
                 WHERE fc.change_time > datetime('now', '-1 day')
@@ -188,7 +218,14 @@ class DatabaseManager:
 
             changes = []
             for row in cursor.fetchall():
-                changes.append({"file_path": row[0], "diff": row[1].decode("utf-8"), "change_time": row[2]})
+                changes.append(
+                    {
+                        "file_path": row[0],
+                        "diff": row[1].decode("utf-8"),
+                        "full_content": row[2].decode("utf-8"),
+                        "change_time": row[3],
+                    }
+                )
             return changes
         finally:
             conn.close()

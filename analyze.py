@@ -1,11 +1,12 @@
-# analyze.py
 import asyncio
+import traceback
 from file_watcher.state_manager import DatabaseManager
 from config.settings import Config
 from agents_controller import AgentsController
 
 
 async def main():
+    """메인 실행 함수: DB 초기화 -> 일일 리포트 생성 -> 결과 저장 순서로 진행."""
     print("Starting AI analysis...")
     print(f"Data retention period: {Config.DATA_RETENTION_PERIOD}")
 
@@ -15,21 +16,21 @@ async def main():
     try:
         controller = AgentsController(Config.DB_PATH)
         await controller.initialize()
+
         final_report = await controller.generate_daily_report()
-
-        if final_report:
-            # final_report를 analysis_results에 추가로 저장
-            # 이렇게 하면 send_report.py가 가장 최근 레코드를 이메일로 보낼 수 있음
-            db_manager.save_analysis_results({"status": "success", "analysis": final_report})
-            print("\nFinal integrated daily report stored in analysis_results.")
-        else:
-            print("\nNo final report generated from agents.")
-
+        handle_analysis_result(db_manager, final_report)
     except Exception as e:
-        print(f"Error during analysis: {str(e)}")
-        import traceback
-
+        print(f"Unexpected error during analysis: {e}")
         traceback.print_exc()
+
+
+def handle_analysis_result(db_manager: DatabaseManager, report: str):
+    """일일 리포트 분석 결과를 DB에 저장하고 사용자에게 피드백을 제공한다."""
+    if report:
+        db_manager.save_analysis_results({"status": "success", "analysis": report})
+        print("Final integrated daily report stored in analysis_results.")
+    else:
+        print("No final report generated from agents.")
 
 
 if __name__ == "__main__":

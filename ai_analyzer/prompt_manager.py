@@ -1,5 +1,4 @@
 from textwrap import dedent
-from typing import Dict, List
 
 
 class AgentPrompts:

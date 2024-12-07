@@ -2,7 +2,6 @@ import sqlite3
 import json
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
-from config.settings import Config
 from memory.embedding_service import EmbeddingService
 from memory.vector_db_client import VectorDBClient
 

@@ -1,6 +1,5 @@
 # memory/vector_db_client.py
 import chromadb
-from chromadb.config import Settings
 
 
 class VectorDBClient:

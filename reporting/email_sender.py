@@ -5,12 +5,12 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from config.settings import Config
-import aiosmtplib
 import re
 import markdown2
 from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import get_lexer_by_name, guess_lexer, PythonLexer
+import pygments
 
 
 class EmailSender:
@@ -45,11 +45,11 @@ class EmailSender:
         try:
             try:
                 lexer = get_lexer_by_name(language)
-            except:
+            except pygments.util.ClassNotFound:
                 # 언어 인식 실패 시 추측
                 try:
                     lexer = guess_lexer(code)
-                except:
+                except pygments.util.ClassNotFound:
                     lexer = PythonLexer()
 
             formatter = HtmlFormatter(noclasses=True, style="monokai", nowrap=False, inline_css=True)
@@ -109,7 +109,6 @@ class EmailSender:
 
     def _create_email_content(self, analysis, analysis_time):
         """이메일 내용을 생성. 마크다운 & 코드 하이라이팅 반영"""
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         converted_html = self._convert_markdown_to_html(analysis)
 
         # 새로운 CSS 스타일 추가

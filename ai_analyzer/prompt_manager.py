@@ -162,12 +162,15 @@ class AgentPrompts:
     @staticmethod
     def get_topic_selection_prompt(changes_text: str, recent_topics_text: str) -> str:
         return dedent(f"""
-            당신은 코드 리뷰 전문가입니다.
-            아래는 최근 3일간 다룬 주제와 오늘 변경된 코드 내용입니다.
+            다음은 최근 3일간 다룬 주제와 오늘 변경된 코드 내용입니다:
 
             최근 3일 주제: {recent_topics_text}
             오늘의 변경사항 요약:
             {changes_text}
+
+            나쁜놈, 착한놈, 새로운놈 각각에 대해 위 스키마에 맞는 JSON만 반환하세요.
+            스키마에 없는 필드나 추가 텍스트 없이, 반드시 JSON 스키마에 정확히 일치하는 형식으로만 응답하세요.
+            스키마를 만족하지 못하거나, JSON 이외의 텍스트를 포함하면 모델은 거부(refusal)해야 합니다.
 
             아래 3명의 에이전트(나쁜놈, 착한놈, 새로운놈)에게 각각 다른 주제를 할당:
             - 나쁜놈: 시급히 개선할 문제점(나쁜습관)

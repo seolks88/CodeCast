@@ -10,20 +10,20 @@ class GoodAgentNode:
         self.llm_client = llm_client
         self.memory = memory
 
-    async def run(self, input: AgentInput) -> AgentOutput:
+    async def run(self, input: AgentInput, previous_suggestions: str = "") -> AgentOutput:
         prompt = AgentPrompts.get_good_agent_prompt(
-            input.topic_text, input.relevant_code, input.context_info, input.user_context
+            input.topic_text, input.context_info, input.user_context, input.full_code, input.diff, previous_suggestions
         )
         response = await self.llm_client.analyze_text(prompt)
-        report_id = self._store_agent_report(input.agent_type, input.topic_text, response)
+        report_id = self._store_agent_report(input.agent_type, input.topic_text, input.context_info, response)
         self._update_concepts_and_habits_in_memory(input.concepts, input.habits, response)
 
         return AgentOutput(
             agent_type=input.agent_type, topic=input.topic_text, report_id=report_id, report_content=response
         )
 
-    def _store_agent_report(self, agent_type: str, topic_text: str, response: str) -> int:
-        topic_id = self.memory.add_topic(datetime.now().isoformat(), topic_text)
+    def _store_agent_report(self, agent_type: str, topic_text: str, context: str, response: str) -> int:
+        topic_id = self.memory.add_topic(datetime.now().isoformat(), topic_text, context)
         return self.memory.add_agent_report(
             date=datetime.now().isoformat(),
             agent_type=agent_type,

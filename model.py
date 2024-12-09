@@ -9,12 +9,6 @@ class AgentTopic(BaseModel):
     context: str
 
 
-class TopicSelection(BaseModel):
-    나쁜놈: AgentTopic
-    착한놈: AgentTopic
-    새로운놈: AgentTopic
-
-
 class TopicSelectorInput(BaseModel):
     changes: List[Dict[str, Any]]
     recent_topics: List[Dict[str, Any]]
@@ -43,13 +37,14 @@ class ReportIntegratorOutput(BaseModel):
 
 # 에이전트 노드용 모델
 class AgentInput(BaseModel):
-    agent_type: str  # "나쁜놈", "착한놈", "새로운놈"
+    agent_type: str  # "개선 에이전트", "칭찬 에이전트", "발견 에이전트"
     topic_text: str
-    relevant_code: str
     context_info: str
     user_context: str
     concepts: List[str]
     habits: List[str]
+    full_code: str
+    diff: str
 
 
 class AgentOutput(BaseModel):

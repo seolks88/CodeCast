@@ -98,6 +98,7 @@ class Config:
         ".idea",
         ".vscode",
         "coverage",
+        "merge",
     ]
 
     # 환경변수에서 무시할 디렉토리 패턴 가져오기

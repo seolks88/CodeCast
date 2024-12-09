@@ -60,18 +60,13 @@ class DatabaseManager:
                     FOREIGN KEY (topic_id) REFERENCES topics (id) ON DELETE CASCADE
                 );
 
-                CREATE TABLE IF NOT EXISTS user_learning_progress (
-                    concept TEXT PRIMARY KEY,
-                    last_mentioned_date TEXT,
-                    difficulty_level TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS user_habits (
-                    habit_name TEXT PRIMARY KEY,
-                    occurrences INTEGER,
-                    last_mentioned_date TEXT
+                CREATE TABLE IF NOT EXISTS analysis_results (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    analysis TEXT NOT NULL,
+                    created_at TEXT DEFAULT (datetime('now'))
                 );
             """)
+            # user_learning_progress, user_habits 테이블 제거했음
 
     def _get_current_time(self):
         """현재 KST 시간을 ISO 형식 문자열로 반환합니다."""

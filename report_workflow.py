@@ -89,27 +89,31 @@ async def analyze_concepts_habits(state: MyState) -> MyState:
 
 async def run_agents_in_parallel(state: MyState) -> MyState:
     if state["error"] or state["fallback_mode"]:
-        # 이미 이전 단계에서 fallback이나 error면 그냥 반환
         return state
 
     try:
-        agent_types = ["나쁜놈", "착한놈", "새로운놈"]
+        # changes에서 full_code와 diff를 합침
+        combined_full_code = "\n\n".join(ch["full_content"] for ch in state["changes"])
+        combined_diff = "\n\n".join(ch["diff"] for ch in state["changes"])
+
+        agent_types = ["개선 에이전트", "칭찬 에이전트", "발견 에이전트"]
         tasks = []
         for agent_type in agent_types:
             inp = AgentInput(
                 agent_type=agent_type,
                 topic_text=state["selected_topics"][agent_type]["topic"],
-                relevant_code=state["selected_topics"][agent_type]["relevant_code"],
                 context_info=state["selected_topics"][agent_type]["context"],
                 user_context=state["user_context"],
                 concepts=state["concepts"],
                 habits=state["habits"],
+                full_code=combined_full_code,  # 필수 필드 추가
+                diff=combined_diff,  # 필수 필드 추가
             )
-            if agent_type == "나쁜놈":
+            if agent_type == "개선 에이전트":
                 tasks.append(bad_agent.run(inp))
-            elif agent_type == "착한놈":
+            elif agent_type == "칭찬 에이전트":
                 tasks.append(good_agent.run(inp))
-            elif agent_type == "새로운놈":
+            elif agent_type == "발견 에이전트":
                 tasks.append(new_agent.run(inp))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -145,8 +149,10 @@ def integrate_reports(state: MyState) -> MyState:
     ri_input = ReportIntegratorInput(agent_reports=state["agent_reports"])
     ri_output: ReportIntegratorOutput = report_integrator.run(ri_input)
     final_report = ri_output.report
-    print("Final integrated daily report:")
-    print(final_report)
+
+    # db_manager 인스턴스는 이미 report_workflow.py 상단에서 생성되어 있음
+    db_manager.save_analysis_results({"status": "success", "analysis": final_report})
+
     return state
 
 
@@ -221,7 +227,7 @@ async def run_graph():
     }
 
     result = await app.ainvoke(initial_state)
-    print("Graph execution result:", result)
+    # print("Graph execution result:", result)
 
 
 if __name__ == "__main__":

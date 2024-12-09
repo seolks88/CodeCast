@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 topic_selection_schema = {
     "type": "object",
     "properties": {
-        "나쁜놈": {
+        "개선 에이전트": {
             "type": "object",
             "properties": {
                 "topic": {"type": "string"},
@@ -15,7 +15,7 @@ topic_selection_schema = {
             "required": ["topic", "relevant_code", "context"],
             "additionalProperties": False,
         },
-        "착한놈": {
+        "칭찬 에이전트": {
             "type": "object",
             "properties": {
                 "topic": {"type": "string"},
@@ -25,7 +25,7 @@ topic_selection_schema = {
             "required": ["topic", "relevant_code", "context"],
             "additionalProperties": False,
         },
-        "새로운놈": {
+        "발견 에이전트": {
             "type": "object",
             "properties": {
                 "topic": {"type": "string"},
@@ -36,7 +36,7 @@ topic_selection_schema = {
             "additionalProperties": False,
         },
     },
-    "required": ["나쁜놈", "착한놈", "새로운놈"],
+    "required": ["개선 에이전트", "칭찬 에이전트", "발견 에이전트"],
     "additionalProperties": False,
 }
 
@@ -116,19 +116,29 @@ class TopicSelector:
         changes_summary = []
         for ch in changes:
             diff_excerpt = ch["diff"]
-            if len(diff_excerpt) > 1000:
-                diff_excerpt = diff_excerpt[:1000] + "..."
             changes_summary.append(f"파일: {ch['file_path']}\n변경사항:\n{diff_excerpt}")
         return "\n\n".join(changes_summary)
 
     def _is_topic_overlapping(self, data: Dict, recent_topic_texts: List[str]) -> bool:
-        all_topics = [data["나쁜놈"]["topic"], data["착한놈"]["topic"], data["새로운놈"]["topic"]]
+        roles = ["개선 에이전트", "칭찬 에이전트", "발견 에이전트"]
+
+        # 먼저 topic만으로 recent_topics에 있는지 체크
+        all_topics = [data[role]["topic"] for role in roles]
         if any(t in recent_topic_texts for t in all_topics):
             return True
-        for t in all_topics:
-            similar = self.memory.find_similar_topics(t, top_k=1)
-            if similar and similar[0]["score"] < 0.8:
+
+        # topic + context를 합쳐서 유사도 검사
+        for role in roles:
+            t = data[role]["topic"]
+            c = data[role]["context"]
+
+            # topic과 context를 합쳐 하나의 텍스트로 구성
+            combined_text = f"{t}\n\n[Context]: {c}"
+
+            similar = self.memory.find_similar_topics(combined_text, top_k=1)
+            if similar and similar[0]["score"] > 0.8:
                 return True
+
         return False
 
     def _recover_with_review_mode(self, recent_topic_texts: List[str]) -> Dict:
@@ -136,9 +146,17 @@ class TopicSelector:
         dummy_code = "# 기존 코드 일부"
         dummy_context = f"이전에 '{fallback_topic}' 주제를 다룬 바 있습니다. 이번에는 복습하며 심화 제안을 드립니다."
         return {
-            "나쁜놈": {"topic": fallback_topic + " 심화 개선점", "relevant_code": dummy_code, "context": dummy_context},
-            "착한놈": {"topic": fallback_topic + " 접근 강화", "relevant_code": dummy_code, "context": dummy_context},
-            "새로운놈": {
+            "개선 에이전트": {
+                "topic": fallback_topic + " 심화 개선점",
+                "relevant_code": dummy_code,
+                "context": dummy_context,
+            },
+            "칭찬 에이전트": {
+                "topic": fallback_topic + " 접근 강화",
+                "relevant_code": dummy_code,
+                "context": dummy_context,
+            },
+            "발견 에이전트": {
                 "topic": fallback_topic + " 확장 아이디어",
                 "relevant_code": dummy_code,
                 "context": dummy_context,
@@ -146,12 +164,38 @@ class TopicSelector:
         }
 
     def _get_topic_selection_prompt(self, changes_text: str, recent_topics_text: str) -> str:
-        return f"""
-            아래는 최근 3일간 다룬 주제와 오늘 변경된 코드 내용입니다:
+        return f"""### 컨텍스트
+아래는 최근 3일간 다룬 주제와 오늘 변경된 코드 내용입니다:
 
-            최근 3일 주제: {recent_topics_text}
-            오늘의 변경사항 요약:
-            {changes_text}
+최근 3일 주제: 
+---최근 3일 주제 시작---
+{recent_topics_text}
+---최근 3일 주제 끝---
 
-            나쁜놈, 착한놈, 새로운놈 각각에 대해 위 스키마에 맞는 JSON을 반환하세요.
-        """.strip()
+오늘의 변경사항 요약:
+---변경사항 시작---
+{changes_text}
+---변경사항 끝---
+
+### 지시사항
+1. 먼저 위 변경사항에서 사용된 주요 프로그래밍 언어(들)를 파악하세요.
+2. 해당 언어(들)의 특성과 변경사항을 고려���여 각 에이전트의 역할에 맞는 주제를 선정해주세요:
+
+- 개선 에이전트: 변경된 코드에서 발견된 해당 언어의 안티패턴이나 개선이 필요한 부분
+- 칭찬 에이전트: 변경사항에서 잘 적용된 해당 언어의 패턴이나 더 개선할 수 있는 코딩 스타일
+- 발견 에이전트: 변경된 코드에 적용 가능한 해당 언어의 최신 기능이나 더 나은 구현 방법
+
+### 주의사항 (엄격한 중복 방지)
+- 각 주제는 서로 중복되지 않아야 합니다
+- 최근 3일간 다룬 주제와 절대 중복되지 않아야 합니다:
+  * 동일한 주제는 물론, 단어만 다르고 의미가 비슷한 주제도 피해주세요
+  * 다음과 같은 경우는 모두 중복으로 간주됩니다:
+    - 동일 단어를 사용한 주제 ("코드 정리" vs "코드 정리하기")
+    - 유사어를 사용한 주제 ("제거" vs "정리" vs "다루기" vs "관리")
+    - 상위/하위 개념의 주제 ("주석 관리" vs "불필요한 주석")
+    - 포함 관계의 주제 ("주석 제거" vs "주석 제거 및 정리")
+  * 기존 주제와 관련된 모든 측면(제거, 개선, 관리, 다루기 등)을 피해주세요
+- 완전히 새로운 관점이나 다른 영역의 주제를 선정하세요
+- 변경된 코드의 프로그래밍 언어와 ���접적으로 연관된 주제를 선정하세요
+- 구체적이고 실행 가능한 개선점을 담은 주제를 선정하세요
+"""

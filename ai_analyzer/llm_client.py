@@ -29,6 +29,12 @@ class LLMClient:
 
         message = completion.choices[0].message
         if message.refusal:
-            # 모델이 스키마에 맞는 응답을 할 수 없다고 거부한 경우
+            # 모델이 스키마를 만족하는 결과를 낼 수 없어서 거부한 경우
             return None, message.refusal
-        return message.parsed, None
+
+        if message.parsed is not None:
+            # 모델이 스키마에 맞추어 정상 파싱된 결과
+            return message.parsed, None
+
+        # parsed가 None이지만 거부도 없으면 content를 반환 (JSON 문자열일 가능성)
+        return message.content, None

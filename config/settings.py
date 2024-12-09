@@ -14,15 +14,15 @@ class Config:
 
     # 환경변수에서 감시 디렉토리 가져오기
     WATCH_DIRECTORIES = os.getenv("CODECAST_WATCH_DIRS", "").split(",")
-    # if not WATCH_DIRECTORIES or WATCH_DIRECTORIES == [""]:
-    #     WATCH_DIRECTORIES = [str(BASE_DIR / "watched_directory")]
+    if not WATCH_DIRECTORIES or WATCH_DIRECTORIES == [""]:
+        WATCH_DIRECTORIES = [str(BASE_DIR / "watched_directory")]
 
     # 환경변수에서 보관 기간 가져오기 (기본값 1분)
     retention_minutes = int(os.getenv("CODECAST_RETENTION_MINUTES", "1"))
     DATA_RETENTION_PERIOD = timedelta(seconds=retention_minutes)
 
     # 데이터베이스 파일 경로 (고정값 사용)
-    DB_PATH = BASE_DIR / "file_history.db"
+    DB_PATH = BASE_DIR / "file_history.db"  # 과거엔 사용, 지금은 사용 안할수도
 
     # 최대 분석 결과 보관 개수 (기본값 10)
     MAX_ANALYSIS_RECORDS = int(os.getenv("CODECAST_MAX_ANALYSIS_RECORDS", "10").strip())
@@ -110,3 +110,9 @@ class Config:
     # Voyage, Cohere API 키 설정
     VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY")
     COHERE_API_KEY = os.getenv("COHERE_API_KEY")
+
+    # 토픽 선택기 최대 재시도 횟수 (중복 주제 발생시 재시도, 모든 시도 실패시 복습 모드로 전환)
+    TOPIC_SELECTOR_MAX_RETRIES = int(os.getenv("TOPIC_SELECTOR_MAX_RETRIES", "3"))
+
+    # OpenAI API 키 추가
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")

@@ -30,9 +30,9 @@ class AgentsController:
         self.memory = MemorySystem(db_path=db_path)
         self.llm_client = LLMClient()
         self.prompts = {
-            "나쁜놈": AgentPrompts.get_bad_agent_prompt,
-            "착한놈": AgentPrompts.get_good_agent_prompt,
-            "새로운놈": AgentPrompts.get_new_agent_prompt,
+            "개선 에이전트": AgentPrompts.get_bad_agent_prompt,
+            "칭찬 에이전트": AgentPrompts.get_good_agent_prompt,
+            "발견 에이전트": AgentPrompts.get_new_agent_prompt,
         }
 
         self.topic_selector = TopicSelector(self.llm_client, self.memory)
@@ -53,6 +53,10 @@ class AgentsController:
             print("No recent changes to analyze.")
             return None
 
+        # full_code와 diff를 하나로 합침
+        combined_full_code = "\n\n".join(ch["full_content"] for ch in changes)
+        combined_diff = "\n\n".join(ch["diff"] for ch in changes)
+
         recent_topics = self.memory.get_recent_topics(days=3)
 
         # 토픽 선정
@@ -69,51 +73,96 @@ class AgentsController:
         concepts, habits = ch_output.concepts, ch_output.habits
         user_context = self._build_user_context(concepts, habits)
 
-        # 에이전트별 보고서 생성 각 노드 호출
+        def fetch_previous_suggestions(topic: str) -> str:
+            similar_reports = self.memory.find_similar_reports(topic, top_k=2)
+            if not similar_reports:
+                return ""
+            suggestions = []
+            for rep in similar_reports:
+                md = rep["metadata"]
+                date_str = md.get("date", "이전 날짜 미상")
+                raw_topic = md.get("raw_topic_text", "")
+                summary = md.get("summary", "")
+
+                report_id = md.get("report_id")
+                if report_id:
+                    report_data = self.memory.get_report_by_id(report_id)
+                    report_content = report_data.get("report_content", "")
+                    code_refs = report_data.get("code_references", [])
+
+                    code_section = ""
+                    if code_refs:
+                        code_section = "\n  관련 코드 참조:\n" + "\n".join(f"    {cr}" for cr in code_refs)
+                    else:
+                        code_section = "\n  과거 보고서 내용 내 코드:\n" + report_content
+
+                    suggestions.append(
+                        f"- 과거 보고서 날짜: {date_str}\n  주제: {raw_topic}\n  요약: {summary}{code_section}"
+                    )
+                else:
+                    suggestions.append(f"- 과거 보고서 날짜: {date_str}\n  주제: {raw_topic}\n  요약: {summary}")
+
+            return "\n".join(suggestions)
+
+        bad_prev = fetch_previous_suggestions(new_topics["개선 에이전트"]["topic"])
+        good_prev = fetch_previous_suggestions(new_topics["칭찬 에이전트"]["topic"])
+        new_prev = fetch_previous_suggestions(new_topics["발견 에이전트"]["topic"])
+
         bad_input = AgentInput(
-            agent_type="나쁜놈",
-            topic_text=new_topics["나쁜놈"]["topic"],
-            relevant_code=new_topics["나쁜놈"]["relevant_code"],
-            context_info=new_topics["나쁜놈"]["context"],
+            agent_type="개선 에이전트",
+            topic_text=new_topics["개선 에이전트"]["topic"],
+            context_info=new_topics["개선 에이전트"]["context"],
             user_context=user_context,
             concepts=concepts,
             habits=habits,
+            full_code=combined_full_code,
+            diff=combined_diff,
         )
         good_input = AgentInput(
-            agent_type="착한놈",
-            topic_text=new_topics["착한놈"]["topic"],
-            relevant_code=new_topics["착한놈"]["relevant_code"],
-            context_info=new_topics["착한놈"]["context"],
+            agent_type="칭찬 에이전트",
+            topic_text=new_topics["칭찬 에이전트"]["topic"],
+            context_info=new_topics["칭찬 에이전트"]["context"],
             user_context=user_context,
             concepts=concepts,
             habits=habits,
+            full_code=combined_full_code,
+            diff=combined_diff,
         )
         new_input = AgentInput(
-            agent_type="새로운놈",
-            topic_text=new_topics["새로운놈"]["topic"],
-            relevant_code=new_topics["새로운놈"]["relevant_code"],
-            context_info=new_topics["새로운놈"]["context"],
+            agent_type="발견 에이전트",
+            topic_text=new_topics["발견 에이전트"]["topic"],
+            context_info=new_topics["발견 에이전트"]["context"],
             user_context=user_context,
             concepts=concepts,
             habits=habits,
+            full_code=combined_full_code,
+            diff=combined_diff,
         )
 
-        # 비동기로 세 노드를 호출 (병렬 실행 가능)
-        bad_result, good_result, new_result = await self._run_agents_concurrently(bad_input, good_input, new_input)
+        bad_result, good_result, new_result = await self._run_agents_concurrently_with_review(
+            bad_input, bad_prev, good_input, good_prev, new_input, new_prev
+        )
 
-        # 리포트 통합
         ri_input = ReportIntegratorInput(agent_reports=[bad_result.dict(), good_result.dict(), new_result.dict()])
         ri_output: ReportIntegratorOutput = self.report_integrator.run(ri_input)
         final_report = ri_output.report
         return final_report
 
-    async def _run_agents_concurrently(self, bad_input: AgentInput, good_input: AgentInput, new_input: AgentInput):
-        # 비동기적으로 세 에이전트를 호출
+    async def _run_agents_concurrently_with_review(
+        self,
+        bad_input: AgentInput,
+        bad_prev: str,
+        good_input: AgentInput,
+        good_prev: str,
+        new_input: AgentInput,
+        new_prev: str,
+    ):
+        # 비동기적으로 세 에이전트를 호출, previous_suggestions 전달
         import asyncio
 
-        bad_task = asyncio.create_task(self.bad_agent_node.run(bad_input))
-        good_task = asyncio.create_task(self.good_agent_node.run(good_input))
-        new_task = asyncio.create_task(self.new_agent_node.run(new_input))
+        bad_task = asyncio.create_task(self.bad_agent_node.run(bad_input, previous_suggestions=bad_prev))
+        good_task = asyncio.create_task(self.good_agent_node.run(good_input, previous_suggestions=good_prev))
+        new_task = asyncio.create_task(self.new_agent_node.run(new_input, previous_suggestions=new_prev))
 
         results = await asyncio.gather(bad_task, good_task, new_task)
         return results[0], results[1], results[2]

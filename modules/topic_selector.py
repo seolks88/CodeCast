@@ -40,32 +40,42 @@ topic_selection_schema = {
     "additionalProperties": False,
 }
 
+# topic_selector.py (변경 예시)
+
 
 class TopicSelector:
     def __init__(self, llm_client, memory):
         self.llm_client = llm_client
         self.memory = memory
-        self.max_retries = 3
+        self.max_retries = 2
 
     async def run(self, input: TopicSelectorInput) -> TopicSelectorOutput:
         changes = input.changes
         recent_topics = input.recent_topics
         recent_topic_texts = [t["raw_topic_text"] for t in recent_topics]
 
+        # 1단계: 기존 로직대로 중복을 허용하지 않는 프롬프트로 시도
         for attempt in range(self.max_retries):
-            data = await self._attempt_new_topics_selection(changes, recent_topic_texts)
+            data = await self._attempt_new_topics_selection(changes, recent_topic_texts, allow_duplicates=False)
             if data:
-                # data는 dict 형태이므로 바로 TopicSelectorOutput에 넣는다.
                 return TopicSelectorOutput(selected_topics=data)
 
-        fallback = self._recover_with_review_mode(recent_topic_texts)
-        return TopicSelectorOutput(selected_topics=fallback)
+        # 2단계: 모든 시도가 실패했으므로, 이제 중복 허용 모드로 프롬프트를 변경해서 시도
+        data = await self._attempt_new_topics_selection(changes, recent_topic_texts, allow_duplicates=True)
+        if data:
+            return TopicSelectorOutput(selected_topics=data)
 
-    async def _attempt_new_topics_selection(self, changes: List[Dict], recent_topic_texts: List[str]) -> Optional[Dict]:
+        # 그래도 실패하면 fallback으로 이전 로직(에러 처리 등) 할 수 있음
+        # 여기서는 그냥 빈 dict 반환
+        return TopicSelectorOutput(selected_topics={})
+
+    async def _attempt_new_topics_selection(
+        self, changes: List[Dict], recent_topic_texts: List[str], allow_duplicates: bool
+    ) -> Optional[Dict]:
         changes_text = self._summarize_changes_for_prompt(changes)
         recent_topics_text = ", ".join(recent_topic_texts) if recent_topic_texts else "없음"
 
-        prompt = self._get_topic_selection_prompt(changes_text, recent_topics_text)
+        prompt = self._get_topic_selection_prompt(changes_text, recent_topics_text, allow_duplicates)
         messages = [
             {
                 "role": "system",
@@ -78,7 +88,6 @@ class TopicSelector:
             {"role": "user", "content": prompt},
         ]
 
-        # JSON Schema를 사용한 response_format 지정
         response_format = {
             "type": "json_schema",
             "json_schema": {"name": "topic_selection_schema", "strict": True, "schema": topic_selection_schema},
@@ -94,8 +103,6 @@ class TopicSelector:
             print("No parsed data returned from LLM.")
             return None
 
-        # 여기서 parsed_data가 dict인지 확인 (parsed가 None이 아니었다면 dict일 가능성 큼)
-        # parsed_data가 문자열일 경우 json.loads()로 디코딩
         if isinstance(parsed_data, str):
             import json
 
@@ -105,8 +112,8 @@ class TopicSelector:
                 print("Invalid JSON content returned from LLM.")
                 return None
 
-        # 이제 parsed_data는 dict 형태라고 가정 가능
-        if self._is_topic_overlapping(parsed_data, recent_topic_texts):
+        # allow_duplicates가 False일 경우에만 중복 체크
+        if not allow_duplicates and self._is_topic_overlapping(parsed_data, recent_topic_texts):
             print("Topic overlaps with recent topics.")
             return None
 
@@ -121,50 +128,22 @@ class TopicSelector:
 
     def _is_topic_overlapping(self, data: Dict, recent_topic_texts: List[str]) -> bool:
         roles = ["개선 에이전트", "칭찬 에이전트", "발견 에이전트"]
-
-        # 먼저 topic만으로 recent_topics에 있는지 체크
         all_topics = [data[role]["topic"] for role in roles]
         if any(t in recent_topic_texts for t in all_topics):
             return True
-
-        # topic + context를 합쳐서 유사도 검사
+        # 추가로 벡터 검색 등으로 유사도 검사 가능
         for role in roles:
             t = data[role]["topic"]
             c = data[role]["context"]
-
-            # topic과 context를 합쳐 하나의 텍스트로 구성
             combined_text = f"{t}\n\n[Context]: {c}"
-
             similar = self.memory.find_similar_topics(combined_text, top_k=1)
             if similar and similar[0]["score"] > 0.8:
                 return True
-
         return False
 
-    def _recover_with_review_mode(self, recent_topic_texts: List[str]) -> Dict:
-        fallback_topic = recent_topic_texts[0] if recent_topic_texts else "이전에 다룬 주제"
-        dummy_code = "# 기존 코드 일부"
-        dummy_context = f"이전에 '{fallback_topic}' 주제를 다룬 바 있습니다. 이번에는 복습하며 심화 제안을 드립니다."
-        return {
-            "개선 에이전트": {
-                "topic": fallback_topic + " 심화 개선점",
-                "relevant_code": dummy_code,
-                "context": dummy_context,
-            },
-            "칭찬 에이전트": {
-                "topic": fallback_topic + " 접근 강화",
-                "relevant_code": dummy_code,
-                "context": dummy_context,
-            },
-            "발견 에이전트": {
-                "topic": fallback_topic + " 확장 아이디어",
-                "relevant_code": dummy_code,
-                "context": dummy_context,
-            },
-        }
-
-    def _get_topic_selection_prompt(self, changes_text: str, recent_topics_text: str) -> str:
-        return f"""### 컨텍스트
+    def _get_topic_selection_prompt(self, changes_text: str, recent_topics_text: str, allow_duplicates: bool) -> str:
+        # 기본 프롬프트
+        base_prompt = f"""### 컨텍스트
 아래는 최근 3일간 다룬 주제와 오늘 변경된 코드 내용입니다:
 
 최근 3일 주제: 
@@ -179,12 +158,25 @@ class TopicSelector:
 
 ### 지시사항
 1. 먼저 위 변경사항에서 사용된 주요 프로그래밍 언어(들)를 파악하세요.
-2. 해당 언어(들)의 특성과 변경사항을 고려���여 각 에이전트의 역할에 맞는 주제를 선정해주세요:
+2. 해당 언어(들)의 특성과 변경사항을 고려하여 각 에이전트의 역할에 맞는 주제를 선정해주세요:
 
 - 개선 에이전트: 변경된 코드에서 발견된 해당 언어의 안티패턴이나 개선이 필요한 부분
 - 칭찬 에이전트: 변경사항에서 잘 적용된 해당 언어의 패턴이나 더 개선할 수 있는 코딩 스타일
 - 발견 에이전트: 변경된 코드에 적용 가능한 해당 언어의 최신 기능이나 더 나은 구현 방법
+"""
 
+        # 중복 허용 여부에 따라 프롬프트 추가 조건
+        if allow_duplicates:
+            # 중복 허용 모드: 기존 주제와 겹쳐도 괜찮다는 점 명시
+            additional_rules = """
+### 주의사항 (중복 허용 모드)
+- 이제는 최근 3일간 다룬 주제와 중복되어도 괜찮습니다.
+- 이전에 다뤘던 주제를 다시 선택하거나, 유사한 주제로 복습/확장해도 됩니다.
+- 단, 여전히 각 에이전트간 주제는 서로 다른 관점을 유지해주세요.
+"""
+        else:
+            # 중복 불가 모드(기존 로직)
+            additional_rules = """
 ### 주의사항 (엄격한 중복 방지)
 - 각 주제는 서로 중복되지 않아야 합니다
 - 최근 3일간 다룬 주제와 절대 중복되지 않아야 합니다:
@@ -196,6 +188,8 @@ class TopicSelector:
     - 포함 관계의 주제 ("주석 제거" vs "주석 제거 및 정리")
   * 기존 주제와 관련된 모든 측면(제거, 개선, 관리, 다루기 등)을 피해주세요
 - 완전히 새로운 관점이나 다른 영역의 주제를 선정하세요
-- 변경된 코드의 프로그래밍 언어와 ���접적으로 연관된 주제를 선정하세요
+- 변경된 코드의 프로그래밍 언어와 직접적으로 연관된 주제를 선정하세요
 - 구체적이고 실행 가능한 개선점을 담은 주제를 선정하세요
 """
+
+        return base_prompt + additional_rules

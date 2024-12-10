@@ -1,51 +1,70 @@
 from langgraph.graph import StateGraph, START, END
 from typing import TypedDict, Any, Dict, List
 import asyncio
+import json
 
 from model import (
     TopicSelectorInput,
     TopicSelectorOutput,
-    ConceptHabitAnalyzerInput,
-    ConceptHabitAnalyzerOutput,
+    HabitAnalyzerInput,
+    HabitAnalyzerOutput,
     AgentInput,
     AgentOutput,
     ReportIntegratorInput,
     ReportIntegratorOutput,
 )
 from modules.topic_selector import TopicSelector
-from modules.concept_habit_analyzer import ConceptHabitAnalyzer
+from modules.habit_analyzer import HabitAnalyzer
 from modules.bad_agent_node import BadAgentNode
 from modules.good_agent_node import GoodAgentNode
 from modules.new_agent_node import NewAgentNode
 from modules.report_integrator import ReportIntegrator
-from memory.memory_system import MemorySystem
+from modules.habit_manager import HabitManager
+from memory.memory_orchestrator import MemoryOrchestrator
+from memory.rdb_repository import RDBRepository
+from memory.embedding_service import EmbeddingService
+from memory.vector_db_client import VectorDBClient
 from ai_analyzer.llm_client import LLMClient
 from file_watcher.state_manager import DatabaseManager
 from config.settings import Config
+from ai_analyzer.prompt_manager import AgentPrompts
+from datetime import datetime
 
 
 class MyState(TypedDict):
     changes: List[Dict[str, Any]]
     recent_topics: List[Dict[str, Any]]
-    concepts: List[str]
     habits: List[str]
     selected_topics: Dict[str, Dict[str, str]]
     user_context: str
+    habits_description: str
     agent_reports: List[Dict[str, Any]]
     fallback_mode: bool
     error: bool
+    final_report: str
+    today: str
+    original_habits_content: str
 
 
 db_manager = DatabaseManager(Config.DB_PATH)
-memory = MemorySystem(db_path=Config.DB_PATH)
+
+rdb_repo = RDBRepository(Config.DB_PATH)
+embedding_service = EmbeddingService()
+vector_client = VectorDBClient(persist_directory=".chroma_db")
+
+memory = MemoryOrchestrator(
+    rdb_repository=rdb_repo, embedding_service=embedding_service, vector_db_client=vector_client
+)
+
 llm_client = LLMClient()
 
 topic_selector = TopicSelector(llm_client, memory)
-concept_analyzer = ConceptHabitAnalyzer(llm_client)
+habit_analyzer = HabitAnalyzer(llm_client)
 bad_agent = BadAgentNode(llm_client, memory)
 good_agent = GoodAgentNode(llm_client, memory)
 new_agent = NewAgentNode(llm_client, memory)
 report_integrator = ReportIntegrator()
+habit_manager = HabitManager(llm_client)
 
 
 async def select_topics(state: MyState) -> MyState:
@@ -70,19 +89,14 @@ def check_topics(state: MyState):
         return "normal"
 
 
-async def analyze_concepts_habits(state: MyState) -> MyState:
+async def analyze_habits(state: MyState) -> MyState:
     try:
-        ch_input = ConceptHabitAnalyzerInput(changes=state["changes"])
-        ch_output: ConceptHabitAnalyzerOutput = await concept_analyzer.run(ch_input)
-        state["concepts"] = ch_output.concepts
-        state["habits"] = ch_output.habits
-        concept_str = (
-            ", ".join([f"'{c}' 개념" for c in ch_output.concepts]) if ch_output.concepts else "특별한 개념 없음"
-        )
-        habit_str = ", ".join([f"'{h}' 습관" for h in ch_output.habits]) if ch_output.habits else "특별한 습관 없음"
-        state["user_context"] = f"사용자 상태: 개념들: {concept_str}, 습관들: {habit_str}."
+        # habits.txt 파일에서 직접 읽기
+        habits_content = habit_manager.read_habits()
+        state["user_context"] = f"사용자 습관 정보:\n{habits_content}"
+        state["habit_description"] = habits_content
     except Exception as e:
-        print(f"Error in analyze_concepts_habits: {e}")
+        print(f"Error in analyze_habits: {e}")
         state["error"] = True
     return state
 
@@ -92,7 +106,6 @@ async def run_agents_in_parallel(state: MyState) -> MyState:
         return state
 
     try:
-        # changes에서 full_code와 diff를 합침
         combined_full_code = "\n\n".join(ch["full_content"] for ch in state["changes"])
         combined_diff = "\n\n".join(ch["diff"] for ch in state["changes"])
 
@@ -104,10 +117,9 @@ async def run_agents_in_parallel(state: MyState) -> MyState:
                 topic_text=state["selected_topics"][agent_type]["topic"],
                 context_info=state["selected_topics"][agent_type]["context"],
                 user_context=state["user_context"],
-                concepts=state["concepts"],
-                habits=state["habits"],
-                full_code=combined_full_code,  # 필수 필드 추가
-                diff=combined_diff,  # 필수 필드 추가
+                habit_description=state.get("habit_description", ""),
+                full_code=combined_full_code,
+                diff=combined_diff,
             )
             if agent_type == "개선 에이전트":
                 tasks.append(bad_agent.run(inp))
@@ -148,11 +160,41 @@ def integrate_reports(state: MyState) -> MyState:
 
     ri_input = ReportIntegratorInput(agent_reports=state["agent_reports"])
     ri_output: ReportIntegratorOutput = report_integrator.run(ri_input)
-    final_report = ri_output.report
+    state["final_report"] = ri_output.report
 
-    # db_manager 인스턴스는 이미 report_workflow.py 상단에서 생성되어 있음
-    db_manager.save_analysis_results({"status": "success", "analysis": final_report})
+    db_manager.save_analysis_results({"status": "success", "analysis": state["final_report"]})
 
+    return state
+
+
+async def update_habits_post_report(state: MyState) -> MyState:
+    messages, response_format = AgentPrompts.get_habit_update_prompt(
+        today=state["today"],
+        original_habits_content=state["original_habits_content"],
+        final_report=state["final_report"],
+    )
+
+    parsed_data, refusal = await llm_client.parse_json(messages, response_format=response_format)
+
+    if refusal:
+        print(f"Habit update refused: {refusal}")
+        state["error"] = True
+        return state
+
+    if isinstance(parsed_data, str):
+        try:
+            parsed_data = json.loads(parsed_data)
+        except json.JSONDecodeError as e:
+            print(f"Failed to parse JSON: {e}")
+            state["error"] = True
+            return state
+
+    new_content = await habit_manager.update_habits(
+        today=state["today"],
+        original_habits_content=state["original_habits_content"],
+        final_report=state["final_report"],
+    )
+    habit_manager.write_habits(new_content)
     return state
 
 
@@ -171,9 +213,10 @@ def error_node(state: MyState) -> MyState:
 graph = StateGraph(MyState)
 
 graph.add_node("select_topics", select_topics)
-graph.add_node("analyze_concepts_habits", analyze_concepts_habits)
+graph.add_node("analyze_habits", analyze_habits)
 graph.add_node("run_agents_in_parallel", run_agents_in_parallel)
 graph.add_node("integrate_reports", integrate_reports)
+graph.add_node("update_habits_post_report", update_habits_post_report)
 graph.add_node("fallback_node", fallback_node)
 graph.add_node("error_node", error_node)
 
@@ -182,12 +225,12 @@ graph.add_edge(START, "select_topics")
 graph.add_conditional_edges(
     "select_topics",
     check_topics,
-    {"normal": "analyze_concepts_habits", "fallback": "fallback_node", "error": "error_node"},
+    {"normal": "analyze_habits", "fallback": "fallback_node", "error": "error_node"},
 )
 
-# 두 번째 분기: analyze_concepts_habits 후 에러/폴백 체크
+# 두 번째 분기: analyze_habits 후 에러/폴백 체크
 graph.add_conditional_edges(
-    "analyze_concepts_habits",
+    "analyze_habits",
     check_error_fallback,
     {"normal": "run_agents_in_parallel", "fallback": "fallback_node", "error": "error_node"},
 )
@@ -199,12 +242,14 @@ graph.add_conditional_edges(
     {"normal": "integrate_reports", "fallback": "fallback_node", "error": "error_node"},
 )
 
+
 # 마지막: integrate_reports 이후 특별한 조건 없이 END
-graph.add_edge("integrate_reports", END)
+graph.add_edge("integrate_reports", "update_habits_post_report")
+graph.add_edge("update_habits_post_report", END)
 
 app = graph.compile()
 
-# 그래프를 이미지로 저장
+# 그래프 이미지로 저장
 graph_png = app.get_graph(xray=True).draw_mermaid_png()
 with open("graph.png", "wb") as f:
     f.write(graph_png)
@@ -213,17 +258,22 @@ with open("graph.png", "wb") as f:
 async def run_graph():
     changes = db_manager.get_recent_changes()
     recent_topics = memory.get_recent_topics(days=3)
+    today = datetime.now().strftime("%Y-%m-%d")
+    original_habits_content = habit_manager.read_habits()
 
     initial_state: MyState = {
         "changes": changes,
         "recent_topics": recent_topics,
-        "concepts": [],
         "habits": [],
         "selected_topics": {},
         "user_context": "",
+        "habits_description": "",
         "agent_reports": [],
         "fallback_mode": False,
         "error": False,
+        "final_report": "",
+        "today": today,
+        "original_habits_content": original_habits_content,
     }
 
     result = await app.ainvoke(initial_state)

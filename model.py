@@ -18,13 +18,12 @@ class TopicSelectorOutput(BaseModel):
     selected_topics: Dict[str, Dict[str, str]]
 
 
-class ConceptHabitAnalyzerInput(BaseModel):
+class HabitAnalyzerInput(BaseModel):
     changes: List[Dict[str, Any]]
 
 
-class ConceptHabitAnalyzerOutput(BaseModel):
-    concepts: List[str]
-    habits: List[str]
+class HabitAnalyzerOutput(BaseModel):
+    habits_description: str
 
 
 class ReportIntegratorInput(BaseModel):
@@ -35,14 +34,12 @@ class ReportIntegratorOutput(BaseModel):
     report: str
 
 
-# 에이전트 노드용 모델
 class AgentInput(BaseModel):
-    agent_type: str  # "개선 에이전트", "칭찬 에이전트", "발견 에이전트"
+    agent_type: str
     topic_text: str
     context_info: str
     user_context: str
-    concepts: List[str]
-    habits: List[str]
+    habit_description: str
     full_code: str
     diff: str
 

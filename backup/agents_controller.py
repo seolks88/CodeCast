@@ -6,7 +6,7 @@ from memory.memory_system import MemorySystem
 from ai_analyzer.llm_client import LLMClient
 from ai_analyzer.prompt_manager import AgentPrompts
 from modules.topic_selector import TopicSelector
-from modules.concept_habit_analyzer import ConceptHabitAnalyzer
+from modules.habit_analyzer import HabitAnalyzer
 from modules.report_integrator import ReportIntegrator
 from modules.bad_agent_node import BadAgentNode
 from modules.good_agent_node import GoodAgentNode
@@ -15,8 +15,8 @@ from modules.new_agent_node import NewAgentNode
 from model import (
     TopicSelectorInput,
     TopicSelectorOutput,
-    ConceptHabitAnalyzerInput,
-    ConceptHabitAnalyzerOutput,
+    HabitAnalyzerInput,
+    HabitAnalyzerOutput,
     ReportIntegratorInput,
     ReportIntegratorOutput,
     AgentInput,
@@ -36,7 +36,7 @@ class AgentsController:
         }
 
         self.topic_selector = TopicSelector(self.llm_client, self.memory)
-        self.concept_habit_analyzer = ConceptHabitAnalyzer(self.llm_client)
+        self.habit_analyzer = HabitAnalyzer(self.llm_client)
         self.report_integrator = ReportIntegrator()
 
         # 에이전트 노드
@@ -68,10 +68,10 @@ class AgentsController:
             return None
 
         # 개념/습관 추출
-        ch_input = ConceptHabitAnalyzerInput(changes=changes)
-        ch_output: ConceptHabitAnalyzerOutput = await self.concept_habit_analyzer.run(ch_input)
-        concepts, habits = ch_output.concepts, ch_output.habits
-        user_context = self._build_user_context(concepts, habits)
+        ch_input = HabitAnalyzerInput(changes=changes)
+        ch_output: HabitAnalyzerOutput = await self.habit_analyzer.run(ch_input)
+        habits = ch_output.habits
+        user_context = self._build_user_context(habits)
 
         def fetch_previous_suggestions(topic: str) -> str:
             similar_reports = self.memory.find_similar_reports(topic, top_k=2)
@@ -113,7 +113,6 @@ class AgentsController:
             topic_text=new_topics["개선 에이전트"]["topic"],
             context_info=new_topics["개선 에이전트"]["context"],
             user_context=user_context,
-            concepts=concepts,
             habits=habits,
             full_code=combined_full_code,
             diff=combined_diff,
@@ -123,7 +122,6 @@ class AgentsController:
             topic_text=new_topics["칭찬 에이전트"]["topic"],
             context_info=new_topics["칭찬 에이전트"]["context"],
             user_context=user_context,
-            concepts=concepts,
             habits=habits,
             full_code=combined_full_code,
             diff=combined_diff,
@@ -133,7 +131,6 @@ class AgentsController:
             topic_text=new_topics["발견 에이전트"]["topic"],
             context_info=new_topics["발견 에이전트"]["context"],
             user_context=user_context,
-            concepts=concepts,
             habits=habits,
             full_code=combined_full_code,
             diff=combined_diff,
@@ -167,19 +164,9 @@ class AgentsController:
         results = await asyncio.gather(bad_task, good_task, new_task)
         return results[0], results[1], results[2]
 
-    def _build_user_context(self, concepts: List[str], habits: List[str]) -> str:
-        concept_str = self._concepts_info_str(concepts)
+    def _build_user_context(self, habits: List[str]) -> str:
         habit_str = self._habits_info_str(habits)
-        return f"사용자 상태: 개념들: {concept_str}, 습관들: {habit_str}. 이 정보를 참고하여 보고서를 맞춤화."
-
-    def _concepts_info_str(self, concepts: List[str]) -> str:
-        infos = []
-        for c in concepts:
-            diff = self.memory.get_concept_difficulty(c) or "basic"
-            if diff == "basic":
-                self.memory.update_concept_difficulty(c, "basic")
-            infos.append(f"'{c}' 개념({diff})")
-        return ", ".join(infos) if infos else "특별한 개념 없음"
+        return f"사용자 상태: 습관들: {habit_str}. 이 정보를 참고하여 보고서를 맞춤화."
 
     def _habits_info_str(self, habits: List[str]) -> str:
         infos = []

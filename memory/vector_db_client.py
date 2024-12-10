@@ -9,7 +9,7 @@ class VectorDBClient:
         self.client = chromadb.PersistentClient(path=persist_directory)
         self.collections = {}
         # cosine 거리 사용을 위해 metadata에 hnsw:space 설정 (필요하다면)
-        for namespace in ["topics", "reports", "concepts", "habits", "code_snippets"]:
+        for namespace in ["topics", "reports", "habits", "code_snippets"]:
             self.collections[namespace] = self.client.get_or_create_collection(
                 name=namespace,
                 metadata={"hnsw:space": "cosine"},

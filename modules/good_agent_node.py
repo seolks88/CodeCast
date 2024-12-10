@@ -16,7 +16,7 @@ class GoodAgentNode:
         )
         response = await self.llm_client.analyze_text(prompt)
         report_id = self._store_agent_report(input.agent_type, input.topic_text, input.context_info, response)
-        self._update_concepts_and_habits_in_memory(input.concepts, input.habits, response)
+        self._update_habits_in_memory(input.habit_description, response)
 
         return AgentOutput(
             agent_type=input.agent_type, topic=input.topic_text, report_id=report_id, report_content=response
@@ -34,14 +34,7 @@ class GoodAgentNode:
             raw_topic_text=topic_text,
         )
 
-    def _update_concepts_and_habits_in_memory(self, concepts: List[str], habits: List[str], response: str):
-        # 동일 로직, 중복 방지 위해 리팩토링 가능하지만 여기서는 그대로 둠
-        for c in concepts:
-            if c in response:
-                current_diff = self.memory.get_concept_difficulty(c) or "basic"
-                new_diff = "intermediate" if current_diff == "basic" else "advanced"
-                self.memory.update_concept_difficulty(c, new_diff)
-
+    def _update_habits_in_memory(self, habits: List[str], response: str):
         for h in habits:
             if h in response:
                 self.memory.record_habit_occurrence(h)

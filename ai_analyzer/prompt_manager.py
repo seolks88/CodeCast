@@ -15,15 +15,15 @@ class AgentPrompts:
         must_mention_review = ""
         if previous_suggestions.strip():
             review_section = dedent(f"""
-            5. 📚 복습  
-            - 아래는 이전 보고서에서 유사한 개선 사항과 코드 예시를 다시 상기시키는 내용입니다.
+            5. 📚 과거 복습 사항
+            - 아래는 이전 보고서에서 제안된 개선 아이디어, 코드 예시, 또는 중요 포인트입니다.
             {previous_suggestions.strip()}
             """).strip()
-            must_mention_review = "이전에 언급된 개선사항 및 코드 예시를 반드시 참조하여 현재 제안에 반영하세요."
+            must_mention_review = "이전에 제시된 개선 방향과 코드 예시를 꼭 다시 참조하고, 이번 제안에 반영해주세요."
 
         return dedent(f"""
-            ### Context (맥락)
-            당신은 주니어 개발자의 성장을 돕는 시니어 개발자입니다.
+            ### 역할 컨텍스트
+            당신은 열정 넘치는 시니어 개발자로서, 주니어 개발자가 더 나은 개발 습관을 형성하도록 지도하는 멘토입니다.
 
             {user_context}
 
@@ -70,15 +70,15 @@ class AgentPrompts:
         must_mention_review = ""
         if previous_suggestions.strip():
             review_section = dedent(f"""
-            5. 📚 복습  
-            - 아래는 이전 보고서에서 유사한 칭찬 포인트나 긍정적 접근 방법을 언급한 내용입니다.
+            5. 📚 과거 복습 사항
+            - 아래는 이전 보고서에서 언급된 칭찬 포인트나 긍정적 접근 방식에 대한 내용입니다.
             {previous_suggestions.strip()}
             """).strip()
-            must_mention_review = "이전에 언급한 칭찬 포인트를 다시 상기시키고 현재 상황과 연결하세요."
+            must_mention_review = "이전에 언급한 칭찬 포인트를 다시 상기시키고, 현재 상황과 자연스럽게 연결해주세요."
 
         return dedent(f"""
-            ### Context (맥락)
-            당신은 주니어 개발자를 응원하는 시니어 개발자입니다.
+            ### 역할 컨텍스트
+            당신은 주니어 개발자를 응원하는 시니어 개발자로서, 그들의 장점을 강조하고 더 발전할 수 있는 인사이트를 제공합니다.
 
             {user_context}
 
@@ -163,71 +163,3 @@ class AgentPrompts:
 
             마지막으로 개발자를 응원하는 메시지를 전하세요.
         """).strip()
-
-    # 먼저 스키마 정의
-    habit_update_schema = {
-        "type": "object",
-        "properties": {
-            "updated_habits": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "improvement": {"type": "boolean"},
-                        "remove": {"type": "boolean"},
-                        "new_occurrences": {"type": "integer"},
-                        "new_last_improved": {"type": "string", "description": "YYYY-MM-DD 형식의 날짜 또는 null"},
-                    },
-                    "required": ["name", "improvement", "remove", "new_occurrences", "new_last_improved"],
-                    "additionalProperties": False,
-                },
-            }
-        },
-        "required": ["updated_habits"],
-        "additionalProperties": False,
-    }
-
-    @staticmethod
-    def get_habit_update_prompt(today: str, original_habits_content: str, final_report: str):
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "당신은 JSON 파서입니다. 아래 JSON 스키마를 반드시 준수하는 올바른 JSON만 반환하세요.\n"
-                    "JSON 이외의 텍스트, 추가 설명, 주석 없이 스키마에 맞는 JSON 객체만 출력하세요.\n"
-                    "스키마에 맞지 않으면 거부(refusal)하세요."
-                ),
-            },
-            {
-                "role": "user",
-                "content": dedent(f"""
-                    다음은 현재 관리중인 습관 목록(habits.txt) 내용입니다:
-
-                    ---습관 목록 시작---
-                    {original_habits_content}
-                    ---습관 목록 끝---
-
-                    아래는 오늘의 최종 종합 보고서입니다:
-                    ---보고서 시작---
-                    {final_report}
-                    ---보고서 끝---
-
-                    지시사항:
-                    - 상기 습관 목록과 오늘 날짜({today}), 종합 보고서를 참고하여, 습관 목록을 업데이트할 방안을 JSON 스키마에 맞추어 제안하세요.
-                    
-                    규칙:
-                    - improvement가 true이면 new_last_improved를 {today}로 설정
-                    - remove가 true이면 해당 습관은 삭제
-                    - 신규 습관 발견 시 new_occurrences=1, new_last_improved={today}로 설정
-                    - 1주일 이상 개선 없었고 이번에도 improvement가 false라면 remove=true로 설정
-                    """).strip(),
-            },
-        ]
-
-        response_format = {
-            "type": "json_schema",
-            "json_schema": {"name": "habit_update_schema", "strict": True, "schema": AgentPrompts.habit_update_schema},
-        }
-
-        return messages, response_format

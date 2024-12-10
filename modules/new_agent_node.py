@@ -2,7 +2,6 @@
 from model import AgentInput, AgentOutput
 from ai_analyzer.prompt_manager import AgentPrompts
 from datetime import datetime
-from typing import List
 
 
 class NewAgentNode:
@@ -21,7 +20,6 @@ class NewAgentNode:
         )
         response = await self.llm_client.analyze_text(prompt)
         report_id = self._store_agent_report(input.agent_type, input.topic_text, input.context_info, response)
-        self._update_habits_in_memory(input.habit_description, response)
 
         return AgentOutput(
             agent_type=input.agent_type, topic=input.topic_text, report_id=report_id, report_content=response
@@ -38,8 +36,3 @@ class NewAgentNode:
             code_refs=[],
             raw_topic_text=topic_text,
         )
-
-    def _update_habits_in_memory(self, habits: List[str], response: str):
-        for h in habits:
-            if h in response:
-                self.memory.record_habit_occurrence(h)

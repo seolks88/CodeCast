@@ -1,7 +1,6 @@
 # modules/habit_manager.py
 import os
 from pathlib import Path
-import asyncio
 from typing import Any
 
 
@@ -63,6 +62,7 @@ class HabitManager:
      - 이 습관이 야기할 수 있는 문제점(또는 장점)  
      - 이를 개선하거나 더욱 강화하기 위한 구체적인 프로세스나 아이디어
    - 무리하게 정보 추가하지 말고, final_report에 나타난 정보만 활용하세요.
+   - final_report에서 발견 에이전트가 제안한 내용은 추가하지 않습니다.
    - "가짜" 습관은 만들지 마세요. final_report로부터 합리적으로 유추 가능한 행동 패턴만 추가하세요.
 
 4. 최종 출력 형식:

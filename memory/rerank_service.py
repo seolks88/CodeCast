@@ -14,6 +14,13 @@ class RerankService:
             documents=documents,
             top_n=top_n,
         )
-        sorted_docs = sorted(response.results, key=lambda x: x["relevance_score"], reverse=True)
-        ranked_docs = [(documents[d["index"]], d["relevance_score"]) for d in sorted_docs]
+
+        # 'score' 키를 사용해 일관성 유지
+        ranked_docs = [
+            {
+                "document": documents[d.index],
+                "score": d.relevance_score,  # 여기서 score 사용
+            }
+            for d in response.results
+        ]
         return ranked_docs

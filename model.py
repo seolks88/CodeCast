@@ -3,12 +3,6 @@ from pydantic import BaseModel
 from typing import List, Dict, Any
 
 
-class AgentTopic(BaseModel):
-    topic: str
-    relevant_code: str
-    context: str
-
-
 class TopicSelectorInput(BaseModel):
     changes: List[Dict[str, Any]]
     recent_topics: List[Dict[str, Any]]
@@ -16,14 +10,6 @@ class TopicSelectorInput(BaseModel):
 
 class TopicSelectorOutput(BaseModel):
     selected_topics: Dict[str, Dict[str, str]]
-
-
-class HabitAnalyzerInput(BaseModel):
-    changes: List[Dict[str, Any]]
-
-
-class HabitAnalyzerOutput(BaseModel):
-    habits_description: str
 
 
 class ReportIntegratorInput(BaseModel):

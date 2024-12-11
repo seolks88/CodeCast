@@ -1,4 +1,4 @@
-# reporting/email_sender.py
+# email_sender.py
 import sqlite3
 from datetime import datetime
 import smtplib
@@ -24,8 +24,10 @@ class EmailSender:
         if not all([self.sender_email, self.sender_password, self.recipient_email]):
             raise ValueError("Missing required email configuration in settings")
 
+    # -----------------
+    # 데이터베이스 작업
+    # -----------------
     def _get_latest_analysis(self):
-        """데이터베이스에서 최신 분석 결과를 가져옵니다."""
         conn = sqlite3.connect(Config.DB_PATH)
         try:
             cursor = conn.cursor()
@@ -40,13 +42,18 @@ class EmailSender:
         finally:
             conn.close()
 
+    # -----------------
+    # 코드 블록 처리
+    # -----------------
     def _highlight_code(self, code: str, language: str) -> str:
         """코드 구문 강조를 적용합니다."""
         try:
+            # 코드 끝의 불필요한 줄바꿈 제거
+            code = code.rstrip()
+
             try:
                 lexer = get_lexer_by_name(language)
             except pygments.util.ClassNotFound:
-                # 언어 인식 실패 시 추측
                 try:
                     lexer = guess_lexer(code)
                 except pygments.util.ClassNotFound:
@@ -59,9 +66,7 @@ class EmailSender:
             return f"<pre><code>{code}</code></pre>"
 
     def _extract_code_blocks(self, markdown_text: str):
-        """마크다운 텍스트에서 ```lang ...``` 형태 코드 블록 추출 및 플레이스홀더 치환"""
         code_blocks = []
-
         pattern = r"```(\w+)?\n(.*?)```"
 
         def repl(m):
@@ -75,26 +80,262 @@ class EmailSender:
         return replaced_text, code_blocks
 
     def _reinsert_code_blocks(self, html: str, code_blocks):
-        """플레이스홀더 @@CODEBLOCK_i@@를 하이라이팅 코드 블록으로 치환"""
-
         def repl(m):
             index = int(m.group(1))
             language, code = code_blocks[index]
             highlighted = self._highlight_code(code, language)
             return f"""
-<div class="highlighted-code-container">
-    <div class="code-content">
-        {highlighted}
-    </div>
-</div>
-"""
+            <div class="highlighted-code-container">
+                <div class="code-content">
+                    {highlighted}
+                </div>
+            </div>
+            """
 
         return re.sub(r"@@CODEBLOCK_(\d+)@@", repl, html)
 
+    def _format_top_summary(self, content: str) -> str:
+        sections = content.split("##")
+        if len(sections) <= 1:
+            return ""
+
+        key_points = []
+        for section in sections[1:4]:  # 처음 3개 섹션만 처리
+            lines = section.strip().split("\n")
+            if lines:
+                title = lines[0].strip()
+                if title:
+                    key_points.append(title)
+
+        if not key_points:
+            return ""
+
+        summary_html = """
+        <div class="summary-section">
+            <div class="summary-title">📌 주요 포인트</div>
+            <ul>
+        """
+        for point in key_points:
+            summary_html += f"<li>{point}</li>"
+        summary_html += """
+            </ul>
+        </div>
+        """
+        return summary_html
+
+    # -----------------
+    # HTML 생성 및 스타일링
+    # -----------------
+    def _create_email_content(self, analysis, analysis_time):
+        converted_html = self._convert_markdown_to_html(analysis)
+
+        html_content = f"""
+        <html>
+            <head>
+                <meta charset="utf-8">
+                <style>
+                    body {{
+                        font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Noto Sans KR', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                        background-color: #F8FAFC;
+                        margin: 0;
+                        padding: 0;
+                        color: #334155;
+                        line-height: 1.8;
+                        -webkit-font-smoothing: antialiased;
+                        -moz-osx-font-smoothing: grayscale;
+                        font-size: 16px;
+                        letter-spacing: -0.01em;
+                        word-break: keep-all;
+                    }}
+                    
+                    .wrapper {{
+                        max-width: 1200px;
+                        margin: 2rem auto;
+                        padding: 0 2rem;
+                        background-color: #FFFFFF;
+                        border-radius: 12px;
+                        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+                    }}
+                    
+                    .header {{
+                        background-color: #2563EB;
+                        padding: 2rem 2.5rem;
+                        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                    }}
+                    
+                    .header-title {{
+                        font-size: 1.6rem;
+                        font-weight: 600;
+                        color: white;
+                        margin: 0;
+                        display: flex;
+                        align-items: center;
+                        gap: 0.5rem;
+                    }}
+                    
+                    .header-date {{
+                        margin-top: 0.75rem;
+                        color: rgba(255, 255, 255, 0.9);
+                        font-size: 0.95rem;
+                    }}
+                    
+                    .content-container {{
+                        padding: 2rem 2.5rem;
+                        max-width: 100%;
+                    }}
+                    
+                    h1, h2, h3 {{
+                        color: #1E293B;
+                        font-weight: 600;
+                        line-height: 1.4;
+                        letter-spacing: -0.02em;
+                        max-width: 100%;
+                        overflow-wrap: break-word;
+                        word-wrap: break-word;
+                        -webkit-hyphens: auto;
+                        -ms-hyphens: auto;
+                        hyphens: auto;
+                    }}
+                    
+                    h1 {{ 
+                        font-size: 1.875rem;
+                        margin: 2.5rem 0 1.5rem;
+                    }}
+                    
+                    h2 {{ 
+                        font-size: 1.5rem;
+                        margin: 2.5rem 0 1.2rem;
+                        padding-bottom: 0.75rem;
+                        border-bottom: 1px solid #E2E8F0;
+                    }}
+                    
+                    h3 {{
+                        font-size: 1.25rem;
+                        margin: 2rem 0 1rem;
+                    }}
+                    
+                    p, li {{
+                        margin: 1.2rem 0;
+                        line-height: 1.8;
+                        color: #475569;
+                        font-size: 1.125rem;
+                        letter-spacing: -0.01em;
+                    }}
+                    
+                    .highlighted-code-container {{
+                        background-color: #1E293B;
+                        border-radius: 8px;
+                        padding: 1.25rem;
+                        margin: 1.5rem 0;
+                        overflow-x: auto;
+                    }}
+                    
+                    .highlighted-code-container .code-content {{
+                        font-family: 'D2Coding', 'JetBrains Mono', Consolas, monospace;
+                        font-size: 1rem;
+                        line-height: 1.75;
+                        letter-spacing: 0;
+                        color: #E2E8F0;
+                    }}
+                    
+                    .highlight {{
+                        background: transparent !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                    }}
+                    
+                    .highlight pre {{
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        background: transparent !important;
+                    }}
+                    
+                    .code-header {{
+                        display: none;
+                    }}
+                    
+                    ul, ol {{
+                        margin: 1.2rem 0;
+                        padding-left: 1.8rem;
+                        color: #475569;
+                    }}
+                    
+                    li {{
+                        margin: 0.8rem 0;
+                        line-height: 1.6;
+                        padding-left: 0.3rem;
+                    }}
+                    
+                    blockquote {{
+                        margin: 1.8rem 0;
+                        padding: 1.2rem 1.8rem;
+                        background: #F8FAFC;
+                        border-left: 4px solid #2563EB;
+                        border-radius: 0 8px 8px 0;
+                        color: #475569;
+                    }}
+                    
+                    strong {{
+                        color: #1E293B;
+                        font-weight: 600;
+                    }}
+                    
+                    a {{
+                        color: #2563EB;
+                        text-decoration: none;
+                        border-bottom: 1px solid transparent;
+                        transition: border-color 0.2s;
+                    }}
+                    
+                    a:hover {{
+                        border-bottom-color: #2563EB;
+                    }}
+                    
+                    .footer {{
+                        text-align: center;
+                        color: #94A3B8;
+                        font-size: 0.9rem;
+                        margin-top: 3.5rem;
+                        padding: 1.8rem;
+                        background: #F8FAFC;
+                        border-radius: 0 0 12px 12px;
+                    }}
+                    
+                    .footer p {{
+                        margin: 0.4rem 0;
+                        color: #94A3B8;
+                    }}
+                    
+                    .content-container ul li,
+                    .content-container ol li {{
+                        font-size: 1.125rem;
+                        padding-left: 0.5rem;
+                        margin: 0.75rem 0;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="wrapper">
+                    <div class="header">
+                        <h1 class="header-title">📊 코드 분석 리포트</h1>
+                        <div class="header-date">
+                            생성일시: {datetime.now().strftime("%Y년 %m월 %d일 %H:%M")}
+                        </div>
+                    </div>
+                    <div class="content-container">
+                        {converted_html}
+                        <div class="footer">
+                            <p>이 리포트는 CodeCast 자동 분석 시스템을 통해 생성되었습니다.</p>
+                            <p>© {datetime.now().year} CodeCast</p>
+                        </div>
+                    </div>
+                </div>
+            </body>
+        </html>"""
+
+        return html_content
+
     def _convert_markdown_to_html(self, markdown_text: str):
-        """
-        마크다운 변환 + 코드 하이라이팅 (플레이스홀더 기법)
-        """
         replaced_text, code_blocks = self._extract_code_blocks(markdown_text)
         extras = {
             "fenced-code-blocks": None,
@@ -107,143 +348,19 @@ class EmailSender:
         final_html = self._reinsert_code_blocks(html, code_blocks)
         return final_html
 
-    def _create_email_content(self, analysis, analysis_time):
-        """이메일 내용을 생성. 마크다운 & 코드 하이라이팅 반영"""
-        converted_html = self._convert_markdown_to_html(analysis)
-
-        # 새로운 CSS 스타일 추가
-        html_content = f"""<html>
-<head>
-    <meta charset="utf-8">
-    <style>
-        body {{
-            font-family: Inter, Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', Oxygen, Ubuntu, sans-serif;
-            background-color: #F8FAFC;
-            margin: 0;
-            padding: 0;
-            color: #334155;
-            line-height: 1.8;
-            font-size: 16px;
-        }}
-        .wrapper {{
-            max-width: 1400px;
-            margin: 2.5rem auto;
-            padding: 0 40px;
-            background-color: #FFFFFF;
-            border-radius: 16px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-        }}
-        .header {{
-            padding: 2rem 0 1.5rem;
-            border-bottom: 1px solid #E2E8F0;
-            margin-bottom: 2rem;
-            background-color: #FFFFFF;
-        }}
-        .header-title {{
-            font-size: 1.4rem;
-            font-weight: 600;
-            color: #1E293B;
-            margin: 0;
-            letter-spacing: -0.01em;
-        }}
-        .content-container {{
-            padding: 0 0 3rem;
-            max-width: 1400px;
-            margin: 0 auto;
-        }}
-        .footer {{
-            text-align: center;
-            color: #64748B;
-            font-size: 0.9rem;
-            margin-top: 3rem;
-            padding-top: 2rem;
-            border-top: 1px solid #E2E8F0;
-        }}
-        h1,h2,h3,h4,h5,h6 {{
-            color: #1E293B;
-            font-weight: 600;
-            letter-spacing: -0.005em;
-            margin-top: 2.2em;
-            margin-bottom: 1.2em;
-            line-height: 1.4;
-            position: relative;
-        }}
-        h2::after {{
-            content: "";
-            display: block;
-            width: 100%;
-            height: 1px;
-            background-color: #E2E8F0;
-            position: absolute;
-            bottom: -0.6em;
-            left: 0;
-        }}
-        h1 {{ font-size: 1.8rem; }}
-        h2 {{ font-size: 1.5rem; }}
-        h3 {{ font-size: 1.3rem; }}
-        p {{
-            margin: 1.8rem 0;
-            font-size: 16.5px;
-            line-height: 1.85;
-            padding-right: 2rem;
-        }}
-        ul, ol {{
-            padding-left: 2.5em;
-            padding-right: 2.5em;
-            margin: 1.8rem 0;
-            font-size: 16.5px;
-        }}
-        li {{
-            margin: 1em 0;
-            line-height: 1.85;
-        }}
-        div.highlighted-code-container {{
-            margin: 2.2em 0;
-            border-radius: 12px;
-            background: rgb(39,40,35);
-            overflow: hidden;
-            padding: 0 1rem;
-        }}
-        div.highlighted-code-container .code-content {{
-            padding: 1.5em 2.5em;
-            font-family: 'JetBrains Mono', Consolas, monospace;
-            font-size: 15.5px;
-            line-height: 1.75;
-            color: #e4e4e4;
-            background: rgb(39,40,35);
-        }}
-    </style>
-</head>
-<body>
-    <div class="wrapper">
-        <div class="header">
-            <h1 class="header-title">코드 분석 리포트</h1>
-        </div>
-        <div class="content-container">
-            {converted_html}
-            <div class="footer">
-                <p>이 리포트는 CodeCast 자동 분석 시스템을 통해 생성되었습니다.</p>
-                <p>© {datetime.now().year} CodeCast</p>
-            </div>
-        </div>
-    </div>
-</body>
-</html>"""
-
-        return html_content
-
+    # -----------------
+    # 이메일 전송
+    # -----------------
     async def send_analysis_report(self):
-        """분석 결과를 이메일로 전송합니다."""
         try:
             analysis, created_at = self._get_latest_analysis()
             if not analysis:
-                print("No analysis results found to send")
+                print("📭 발송할 분석 결과가 없습니다")
                 return False
 
             email_content = self._create_email_content(analysis, created_at)
-
             msg = MIMEMultipart("alternative")
-            msg["Subject"] = f'코드 분석 리포트 - {datetime.now().strftime("%Y-%m-%d %H:%M")}'
+            msg["Subject"] = f'[CodeCast] 코드 분석 리포트 - {datetime.now().strftime("%Y-%m-%d")}'
             msg["From"] = self.sender_email
             msg["To"] = self.recipient_email
             msg.attach(MIMEText(email_content, "html"))
@@ -253,8 +370,9 @@ class EmailSender:
                 server.login(self.sender_email, self.sender_password)
                 server.send_message(msg)
 
+            print("📨 분석 리포트가 성공적으로 발송되었습니다!")
             return True
 
         except Exception as e:
-            print(f"이메일 전송 중 오류 발생: {str(e)}")
+            print(f"❌ 이메일 전송 중 오류가 발생했습니다: {str(e)}")
             return False

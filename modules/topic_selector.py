@@ -1,7 +1,9 @@
 # topic_selector.py (변경 후)
 from model import TopicSelectorInput, TopicSelectorOutput
 from typing import Dict, List, Optional
+from config.settings import Config
 
+# topic_selector.py
 topic_selection_schema = {
     "type": "object",
     "properties": {
@@ -9,30 +11,30 @@ topic_selection_schema = {
             "type": "object",
             "properties": {
                 "topic": {"type": "string"},
-                "relevant_code": {"type": "string"},
                 "context": {"type": "string"},
+                "related_files": {"type": "array", "items": {"type": "string"}},
             },
-            "required": ["topic", "relevant_code", "context"],
+            "required": ["topic", "context", "related_files"],
             "additionalProperties": False,
         },
         "칭찬 에이전트": {
             "type": "object",
             "properties": {
                 "topic": {"type": "string"},
-                "relevant_code": {"type": "string"},
                 "context": {"type": "string"},
+                "related_files": {"type": "array", "items": {"type": "string"}},
             },
-            "required": ["topic", "relevant_code", "context"],
+            "required": ["topic", "context", "related_files"],
             "additionalProperties": False,
         },
         "발견 에이전트": {
             "type": "object",
             "properties": {
                 "topic": {"type": "string"},
-                "relevant_code": {"type": "string"},
                 "context": {"type": "string"},
+                "related_files": {"type": "array", "items": {"type": "string"}},
             },
-            "required": ["topic", "relevant_code", "context"],
+            "required": ["topic", "context", "related_files"],
             "additionalProperties": False,
         },
     },
@@ -40,14 +42,12 @@ topic_selection_schema = {
     "additionalProperties": False,
 }
 
-# topic_selector.py (변경 예시)
-
 
 class TopicSelector:
     def __init__(self, llm_client, memory):
         self.llm_client = llm_client
         self.memory = memory
-        self.max_retries = 2
+        self.max_retries = Config.TOPIC_SELECTOR_MAX_RETRIES
 
     async def run(self, input: TopicSelectorInput) -> TopicSelectorOutput:
         changes = input.changes
@@ -158,11 +158,15 @@ class TopicSelector:
 
 ### 지시사항
 1. 먼저 위 변경사항에서 사용된 주요 프로그래밍 언어(들)를 파악하세요.
-2. 해당 언어(들)의 특성과 변경사항을 고려하여 각 에이전트의 역할에 맞는 주제를 선정해주세요:
+2. 해당 언어(들)의 특성과 변경사항을 고려하여 각 에이전트의 역할에 맞는 주제를 선정해주세요.
+3. 각 주제와 관련된 파일들의 경로를 명시해주세요. 주제와 파일의 관련성을 신중히 고려하세요.
 
+각 에이전트별 선정 기준:
 - 개선 에이전트: 변경된 코드에서 발견된 해당 언어의 안티패턴이나 개선이 필요한 부분
 - 칭찬 에이전트: 변경사항에서 잘 적용된 해당 언어의 패턴이나 더 개선할 수 있는 코딩 스타일
 - 발견 에이전트: 변경된 코드에 적용 가능한 해당 언어의 최신 기능이나 더 나은 구현 방법
+
+반환 형식에서 related_files는 해당 주제와 가장 밀접하게 관련된 파일 경로들의 배열이어야 합니다.
 """
 
         # 중복 허용 여부에 따라 프롬프트 추가 조건

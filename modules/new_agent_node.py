@@ -9,14 +9,13 @@ class NewAgentNode:
         self.llm_client = llm_client
         self.memory = memory
 
-    async def run(self, input: AgentInput, previous_suggestions: str = "") -> AgentOutput:
+    async def run(self, input: AgentInput) -> AgentOutput:
         prompt = AgentPrompts.get_new_agent_prompt(
             input.topic_text,
             input.context_info,
             input.user_context,
             input.full_code,
             input.diff,
-            previous_suggestions,
         )
         response = await self.llm_client.analyze_text(prompt)
         report_id = self._store_agent_report(input.agent_type, input.topic_text, input.context_info, response)

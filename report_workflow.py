@@ -66,6 +66,7 @@ habit_manager = HabitManager(llm_client)
 
 # 추가된 precheck_node
 async def precheck_node(state: MyState) -> MyState:
+    print("[INFO] precheck_node 시작")
     total_changed_lines = 0
     for ch in state["changes"]:
         diff_content = ch.get("diff", "")
@@ -88,6 +89,7 @@ def precheck_decision(state: MyState):
 
 # 추가된 generate_advice_node
 async def generate_advice_node(state: MyState) -> MyState:
+    print("[INFO] generate_advice_node 시작")
     # habits.txt 읽기
     habits_content = habit_manager.read_habits().strip()
 
@@ -119,6 +121,7 @@ async def generate_advice_node(state: MyState) -> MyState:
 
 
 async def select_topics(state: MyState) -> MyState:
+    print("[INFO] select_topics 시작")
     try:
         ts_input = TopicSelectorInput(changes=state["changes"], recent_topics=state["recent_topics"])
         output: TopicSelectorOutput = await topic_selector.run(ts_input)
@@ -142,6 +145,7 @@ def check_topics(state: MyState):
 
 
 async def analyze_habits(state: MyState) -> MyState:
+    print("[INFO] analyze_habits 시작")
     try:
         habits_content = habit_manager.read_habits()
         state["user_context"] = f"사용자 습관 정보:\n{habits_content}"
@@ -154,17 +158,29 @@ async def analyze_habits(state: MyState) -> MyState:
 
 
 async def run_agents_in_parallel(state: MyState) -> MyState:
-    # 기존 로직 그대로
+    print("[INFO] run_agents_in_parallel 시작")
     if state["error"] or state["fallback_mode"]:
         return state
 
     try:
-        combined_full_code = "\n\n".join(ch["full_content"] for ch in state["changes"] if ch["full_content"])
-        combined_diff = "\n\n".join(ch["diff"] for ch in state["changes"] if ch["diff"])
+        # changes를 file_path를 키로 하는 딕셔너리로 변환
+        changes_by_file = {ch["file_path"]: ch for ch in state["changes"]}
 
         agent_types = ["개선 에이전트", "칭찬 에이전트", "발견 에이전트"]
         tasks = []
+
         for agent_type in agent_types:
+            # 해당 에이전트와 관련된 파일들만 선택
+            related_files = state["selected_topics"][agent_type]["related_files"]
+
+            # 관련된 파일들의 코드와 diff만 결합
+            agent_related_changes = {path: changes_by_file[path] for path in related_files if path in changes_by_file}
+
+            combined_full_code = "\n\n".join(
+                ch["full_content"] for ch in agent_related_changes.values() if ch["full_content"]
+            )
+            combined_diff = "\n\n".join(ch["diff"] for ch in agent_related_changes.values() if ch["diff"])
+
             inp = AgentInput(
                 agent_type=agent_type,
                 topic_text=state["selected_topics"][agent_type]["topic"],
@@ -174,6 +190,7 @@ async def run_agents_in_parallel(state: MyState) -> MyState:
                 full_code=combined_full_code,
                 diff=combined_diff,
             )
+
             if agent_type == "개선 에이전트":
                 tasks.append(bad_agent.run(inp))
             elif agent_type == "칭찬 에이전트":
@@ -204,6 +221,7 @@ def check_error_fallback(state: MyState):
 
 
 def integrate_reports(state: MyState) -> MyState:
+    print("[INFO] integrate_reports 시작")
     if state["error"]:
         print("An error occurred during the pipeline. Cannot produce final report.")
         return state
@@ -221,6 +239,7 @@ def integrate_reports(state: MyState) -> MyState:
 
 
 async def update_habits_post_report(state: MyState) -> MyState:
+    print("[INFO] update_habits_post_report 시작")
     if state["error"] or state["fallback_mode"]:
         return state
 
@@ -240,6 +259,7 @@ async def update_habits_post_report(state: MyState) -> MyState:
 
 
 def fallback_node(state: MyState) -> MyState:
+    print("[INFO] fallback_node 시작")
     print("Fallback mode activated. No meaningful topics to process.")
 
     if not state["final_report"]:
@@ -252,6 +272,7 @@ def fallback_node(state: MyState) -> MyState:
 
 
 def error_node(state: MyState) -> MyState:
+    print("[INFO] error_node 시작")
     print(f"Error occurred at node: {state.get('error_node_name')}")
     state["fallback_mode"] = True
     if not state["final_report"]:
@@ -305,6 +326,9 @@ graph.add_conditional_edges(
 graph.add_edge("integrate_reports", "update_habits_post_report")
 graph.add_edge("update_habits_post_report", END)
 
+graph.add_edge("fallback_node", END)
+graph.add_edge("error_node", END)
+
 app = graph.compile()
 
 
@@ -332,7 +356,7 @@ async def run_graph():
     }
 
     result = await app.ainvoke(initial_state)
-    print("Final Report:", result["final_report"])
+    # print("Final Report:", result["final_report"])
 
 
 if __name__ == "__main__":

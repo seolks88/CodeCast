@@ -113,7 +113,7 @@ class Config:
     COHERE_API_KEY = os.getenv("COHERE_API_KEY")
 
     # 토픽 선택기 최대 재시도 횟수 (중복 주제 발생시 재시도, 모든 시도 실패시 복습 모드로 전환)
-    TOPIC_SELECTOR_MAX_RETRIES = int(os.getenv("TOPIC_SELECTOR_MAX_RETRIES", "2"))
+    TOPIC_SELECTOR_MAX_RETRIES = int(os.getenv("TOPIC_SELECTOR_MAX_RETRIES", "1"))
 
     # OpenAI API 키 추가
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")

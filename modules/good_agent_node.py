@@ -3,12 +3,11 @@ from model import AgentInput, AgentOutput
 from ai_analyzer.prompt_manager import AgentPrompts
 from datetime import datetime
 from ai_analyzer.llm_manager import LLMManager
-from config.settings import Config
 
 
 class GoodAgentNode:
-    def __init__(self, memory, model=Config.DEFAULT_LLM_MODEL):
-        self.llm = LLMManager(model=model)
+    def __init__(self, memory, llm_manager: LLMManager):
+        self.llm = llm_manager
         self.memory = memory
 
     async def run(self, input: AgentInput) -> AgentOutput:
@@ -23,7 +22,7 @@ class GoodAgentNode:
             missing_points=input.missing_points,
             current_report=input.current_report,
         )
-        response = await self.llm.agenerate(prompt=user_prompt, system_prompt=system_prompt, temperature=0.4)
+        response = await self.llm.agenerate(prompt=user_prompt, system_prompt=system_prompt, temperature=0.1)
         report_id = self._store_agent_report(input.agent_type, input.topic_text, input.context_info, response)
         print(f"[INFO] GoodAgentNode completed: {report_id}")
         return AgentOutput(

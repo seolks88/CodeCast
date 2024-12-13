@@ -5,11 +5,11 @@ from ai_analyzer.llm_manager import LLMManager
 
 
 class HabitManager:
-    def __init__(self, model) -> None:
+    def __init__(self, llm_manager: LLMManager) -> None:
         # 프로젝트 루트 디렉토리 기준으로 habits.txt 경로 설정
         project_root = Path(__file__).parent.parent
         self.habit_file_path = str(project_root / "habits.txt")
-        self.llm = LLMManager(model=model)
+        self.llm = llm_manager
 
     def read_habits(self) -> str:
         """habits.txt 파일 내용을 반환. 파일 없으면 빈 문자열."""
@@ -59,11 +59,32 @@ class HabitManager:
      * 최신 컨텍스트로 내용 업데이트
      * last_updated를 {today}로 변경
    - 오늘 보고서에서 언급되지 않은 경우:
-     * 기존 컨텍스트 유지
+     * ���존 컨텍스트 유지
      * 기존 last_updated 유지
 
 5. 작성 형식:
-"사용자는 [구체적인 습관] 하는 습관이 있습니다. [보고서에서 언급된 최신 예시나 컨텍스트]. 주 사용 언어: [언어], 관련 도구: [도구들], 이 습관은 [보고서에서 언급된 긍정적 효과]에 기여합니다. last_updated: YYYY-MM-DD"
+"사용자는 [일반적인 프로그래밍 패턴/습관] 하는 습관이 있습니다. [구체적인 예시나 컨텍스트를 일반화하여 설명]. 주 사용 언어: [언어], 관련 도구: [도구들], 이 습관은 [긍정적 효과]에 기여합니다. last_updated: YYYY-MM-DD"
+
+작성 예시:
+잘된 예:
+"사용자는 비동기 작업에서 체계적인 에러 처리와 재시도 패턴을 구현하는 습관이 있습니다. 네트워크 요청과 같은 불안정한 작업에서 지수 백오프 방식의 재시도 로직을 적용하고, 에러 타입별 맞춤형 처리 전략을 구현합니다..."
+
+잘못된 예:
+"사용자는 LLMManager 클래스의 agenerate 함수에서 에러 처리를 구현하는 습관이 있습니다. _retry_api_call 함수를 통해 Gemini와 OpenAI 모델의 재시도 로직을 관리합니다..."
+
+작성 시 주의사항:
+- 구체적인 함수명이나 클래스명 대신 일반적인 패턴 설명 (예: "LLMManager.agenerate" 대신 "비동기 API 호출")
+- 프로젝트 특정 구현 대신 재사용 가능한 패턴 위주 설명 (예: "Gemini와 OpenAI 모델" 대신 "외부 API 호출")
+- 예시는 일반화하여 설명 (예: "report_workflow.py" 대신 "워크플로우 관리 모듈")
+- 긍정적 효과는 코드 품질, 유지보수성, 성능 등 일반적인 관점에서 기술
+
+6. 일반화 예시:
+구체적 표현 → 일반화된 표현
+- "LLMManager 클래스" → "서비스 클래스"
+- "agenerate 함수" → "비동기 처리 함수"
+- "TopicSelector" → "데이터 처리 컴포넌트"
+- "AgentNode" → "워커 클래스"
+- "report_workflow.py" → "워크플로우 모듈"
 
 habits.txt 형식으로 결과만 반환해주세요.
 """

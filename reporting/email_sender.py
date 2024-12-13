@@ -445,6 +445,22 @@ class EmailSender:
                         border-top: 1px solid #eee;
                         text-align: center;
                     }}
+                    .report-footer {{
+                        margin-top: 2rem;
+                        padding: 1.5rem 0;
+                        border-top: 1px solid #eaeaea;
+                    }}
+                    .footer-content {{
+                        text-align: center;
+                        color: #666;
+                    }}
+                    .footer-brand {{
+                        font-weight: bold;
+                        margin-bottom: 0.5rem;
+                    }}
+                    .footer-meta, .footer-contact {{
+                        font-size: 0.9rem;
+                    }}
                 </style>
             </head>
             <body>
@@ -475,7 +491,7 @@ class EmailSender:
 
     def _convert_markdown_to_html(self, markdown_text: str):
         def replace_inline_backticks(text: str) -> str:
-            """코드 블록 내부의 백틱 3개를 작은따옴표 3개로 치환"""
+            """코드 블록 내부의 백틱 3개를 작은���옴표 3개로 치환"""
             lines = text.split("\n")
             in_code_block = False
             result = []
@@ -543,7 +559,7 @@ class EmailSender:
         try:
             analysis, created_at = self._get_latest_analysis()
             if not analysis:
-                print("📭 발송할 분석 결과가 없습니다")
+                print("��� 발송할 분석 결과가 없습니다")
                 return False
 
             email_content = self._create_email_content(analysis, created_at)

@@ -2,12 +2,11 @@
 
 from textwrap import dedent
 from ai_analyzer.llm_manager import LLMManager
-from config.settings import Config
 
 
 class DeepExplainerAgentNode:
-    def __init__(self, model=Config.DEFAULT_LLM_MODEL):
-        self.llm = LLMManager(model=model)
+    def __init__(self, llm_manager: LLMManager):
+        self.llm = llm_manager
 
     @staticmethod
     def get_system_prompt() -> str:
@@ -15,6 +14,7 @@ class DeepExplainerAgentNode:
             당신은 '쪽집개 선생님'이라는 별명을 가진 시니어 개발자입니다.
             주니어 개발자들이 한 단계 더 성장하는데 필요한 인사이트를 
             "아, 이런 시각으로 봐야 하는구나!" 하고 깨달을 수 있게 설명하는 것이 특기입니다.
+            실제 만나서 대화하는 것처럼 사람처럼 자연스럽게 말해주세요.
             
             당신의 역할:
             - 복잡한 개념을 3줄 요약으로 먼저 설명하기
@@ -84,30 +84,13 @@ class DeepExplainerAgentNode:
             - 이해하기 쉽게
             - 명확하게
             
-            ### 💡 현장에서 배운 것들
-            1. "이것만 알면 절반은 성공" 포인트
-            2. "아차! 이런 실수 조심하세요" 사례
-            3. "실전에서는 이렇게 써요" 꿀팁
-            
             ### 코드로 보는 실전 적용 🎯
             ```python
-            # Before (흔히 하는 방식)
-            [코드 예시]
-            
-            # After (이렇게 개선하면 좋아요)
-            [개선된 코드]
+            [실전에서 시니어 개발자가 사용하는 간략한 코드 예시]
             ```
             
             ### 더 깊이 들어가기 🚀
-            - 성능/보안 관점: "이런 부분 놓치지 마세요"
-            - 설계 관점: "확장성을 고려한다면..."
-            - 협업 관점: "팀에서는 이렇게 접근해요"
-            - 비즈니스 가치: "이게 왜 중요할까요?"
-            
-            ### 다음 단계로! 💪
-            - 이런 것들도 한번 살펴보세요
-            - 실무에서 더 성장하려면?
-            - 추천하는 학습 리소스
+            - [성능, 보안, 설계, 협업, 비즈니스 등 다양한 관점에서 놓치기 쉽지만 꼭 고려해야 할 부분을 딱 한가지 선정하여 예시와 함께 깊이있지만 쉽게 2-3줄에 나누어 작성해주세요]  
         """).strip()
 
     async def run(self, final_report: str, feedback: str = "") -> str:
@@ -118,5 +101,5 @@ class DeepExplainerAgentNode:
         system_prompt = self.get_system_prompt()
         user_prompt = self.get_user_prompt(final_report, feedback)
 
-        response = await self.llm.agenerate(prompt=user_prompt, system_prompt=system_prompt, temperature=0.7)
+        response = await self.llm.agenerate(prompt=user_prompt, system_prompt=system_prompt, temperature=0.1)
         return response.strip()

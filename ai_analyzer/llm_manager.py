@@ -69,7 +69,6 @@ class LLMManager:
         stream: bool = False,
         max_retries: int = 5,
         temperature: float = 0.7,
-        max_tokens: int = 4000,
         **kwargs,
     ) -> Optional[str]:
         if self.is_gemini:
@@ -97,7 +96,6 @@ class LLMManager:
                     messages=messages,
                     stream=stream,
                     api_key=self.config["api_key"],
-                    max_tokens=max_tokens,
                     temperature=temperature,
                     **kwargs,
                 )
@@ -131,7 +129,6 @@ class LLMManager:
         stream: bool = False,
         max_retries: int = 5,
         temperature: float = 0.7,
-        max_tokens: int = 4000,
         **kwargs,
     ) -> Optional[str]:
         messages = self._create_messages(prompt, system_prompt)
@@ -143,7 +140,6 @@ class LLMManager:
                     messages=messages,
                     stream=stream,
                     api_key=self.config["api_key"],
-                    max_tokens=max_tokens,
                     temperature=temperature,
                     **kwargs,
                 )

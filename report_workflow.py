@@ -24,7 +24,6 @@ from memory.memory_orchestrator import MemoryOrchestrator
 from memory.rdb_repository import RDBRepository
 from memory.embedding_service import EmbeddingService
 from memory.vector_db_client import VectorDBClient
-from backup.llm_client import LLMClient
 from file_watcher.state_manager import DatabaseManager
 from config.settings import Config
 
@@ -59,6 +58,8 @@ class MyState(TypedDict):
     deep_explain_result: Optional[Dict[str, Any]]
     nodes_to_rerun: List[str]
     agent_feedbacks: List[HabitsFeedback]
+    habits_review_passed: bool
+    deep_explain_review_passed: bool
 
 
 db_manager = DatabaseManager(Config.DB_PATH)
@@ -71,16 +72,15 @@ memory = MemoryOrchestrator(
     rdb_repository=rdb_repo, embedding_service=embedding_service, vector_db_client=vector_client
 )
 
-llm_client = LLMClient()
-llm = LLMManager(model=Config.DEFAULT_LLM_MODEL)
+llm_manager = LLMManager(model=Config.DEFAULT_LLM_MODEL)
 
-topic_selector = TopicSelector(memory, model=Config.DEFAULT_LLM_MODEL)
-bad_agent = BadAgentNode(memory, model=Config.DEFAULT_LLM_MODEL)
-good_agent = GoodAgentNode(memory, model=Config.DEFAULT_LLM_MODEL)
-new_agent = NewAgentNode(memory, model=Config.DEFAULT_LLM_MODEL)
-report_integrator = ReportIntegrator()
-habit_manager = HabitManager(model=Config.DEFAULT_LLM_MODEL)
-deep_explainer_agent = DeepExplainerAgentNode(model=Config.DEFAULT_LLM_MODEL)
+topic_selector = TopicSelector(memory, llm_manager)
+bad_agent = BadAgentNode(memory, llm_manager)
+good_agent = GoodAgentNode(memory, llm_manager)
+new_agent = NewAgentNode(memory, llm_manager)
+report_integrator = ReportIntegrator(llm_manager)
+habit_manager = HabitManager(llm_manager)
+deep_explainer_agent = DeepExplainerAgentNode(llm_manager)
 
 
 # 추가된 precheck_node
@@ -156,9 +156,9 @@ async def select_topics(state: MyState) -> MyState:
 
 def check_topics(state: MyState):
     if state["error"]:
-        return "error_node"
+        return "error"
     elif state["fallback_mode"]:
-        return "fallback_node"
+        return "fallback"
     else:
         return "analyze_habits"
 
@@ -255,7 +255,7 @@ def check_error_fallback(state: MyState):
         return "normal"  # 정상 경우에 integrate_reports 대신 normal을 반환
 
 
-def integrate_reports(state: MyState) -> MyState:
+async def integrate_reports(state: MyState) -> MyState:
     print("[INFO] integrate_reports 시작")
     if state["error"]:
         print("An error occurred during the pipeline. Cannot produce final report.")
@@ -265,11 +265,23 @@ def integrate_reports(state: MyState) -> MyState:
         print("Fallback mode: No topics found, no integrated report.")
         return state
 
-    ri_input = ReportIntegratorInput(agent_reports=state["agent_reports"])
-    ri_output: ReportIntegratorOutput = report_integrator.run(ri_input)
-    state["final_report"] = ri_output.report
+    # agent_reports가 비어있는지 확인
+    if not state["agent_reports"]:
+        print("No agent reports to integrate.")
+        state["fallback_mode"] = True
+        return state
 
-    db_manager.save_analysis_results({"status": "success", "analysis": state["final_report"]})
+    try:
+        ri_input = ReportIntegratorInput(agent_reports=state["agent_reports"])
+        ri_output: ReportIntegratorOutput = await report_integrator.run(ri_input)
+        state["final_report"] = ri_output.report
+
+        db_manager.save_analysis_results({"status": "success", "analysis": state["final_report"]})
+    except Exception as e:
+        print(f"Error in integrate_reports: {e}")
+        state["error"] = True
+        state["error_node_name"] = "integrate_reports"
+
     return state
 
 
@@ -306,20 +318,31 @@ def fallback_node(state: MyState) -> MyState:
     return state
 
 
-def error_node(state: MyState) -> MyState:
-    print("[INFO] error_node 시작")
-    print(f"Error occurred at node: {state.get('error_node_name')}")
-    state["fallback_mode"] = True
-    if not state["final_report"]:
-        state["final_report"] = (
-            "분석 도중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.\n"
-            "오류가 지속된다면 시스템 관리자에게 문의하세요."
-        )
+async def error_node(state: MyState) -> MyState:
+    print(f"[ERROR] 에러 발생: {state['error_node_name']}에서 오류가 발생했습니다.")
+
+    # 재시도 횟수 증가
+    state["retry_count"] = state.get("retry_count", 0) + 1
+
+    # 최대 재시도 횟수(5회) 초과시 fallback
+    if state["retry_count"] > 5:
+        state["fallback_mode"] = True
+        state["final_report"] = f"분석 중 {state['error_node_name']}에서 반복적인 오류가 발생했습니다."
+        return state
+
+    # 재시도를 위해 상태 초기화
+    state["error"] = False
+    state["error_node_name"] = ""
     return state
 
 
 async def review_report(state: MyState) -> MyState:
     print("[INFO] review_report 시작")
+
+    # 이전 리뷰에서 문제가 없었는지 확인
+    if state.get("review_result") == "ok":
+        print("[INFO] 이전 리뷰에서 문제가 없었으므로 재검토 생략")
+        return state
 
     # 1. habits 반영 여부 검토
     habits_review_schema = {
@@ -341,37 +364,50 @@ async def review_report(state: MyState) -> MyState:
             },
             "agent_types": {
                 "type": "array",
-                "items": {"type": "string", "enum": ["개선 에이전트", "칭찬 에이전트", "발견 에이전트"]},
+                "items": {"type": "string", "enum": ["개선 에이전트", "칭찬 에이전트", "견 에이전트"]},
             },
         },
         "required": ["is_reflected", "feedback", "agent_feedbacks", "agent_types"],
     }
 
-    habits_prompt = f"""
-    다음 habits.txt 내용과 최종 리포트를 비교 검토해주세요:
-    
-    [Habits 내용]
-    {state['original_habits_content']}
-    
-    [최종 리포트]
-    {state['final_report']}
-    
-    1. habits.txt의 내용이 리포트에 적절히 반영되었는지 판단해주세요.
-    2. 만약 반영이 부족하다면, 어떤 에이전트(개선/칭찬/발견)의 분석이 부족한지 선택해주세요.
-    3. 부족한 부분을 해결하려면 어떻게 접근해야하는지 구체적인 피드백을 제공해주세요.
-    """
+    habits_result = None
+    if not state.get("habits_review_passed"):  # habits 리뷰가 아직 통과하지 않은 경우에만 실행
+        habits_prompt = f"""
+        다음 habits.txt 내용과 최종 리포트를 비교 검토해주세요:
+        
+        [Habits 내용]
+        {state['original_habits_content']}
+        
+        [최종 리포트]
+        {state['final_report']}
+        
+        1. habits.txt의 내용이 리포트에 적절한 수준으로 반영되었는지 판단해주세요.
+           - 모든 내용이 완벽하게 반영될 필요는 없습니다.
+           - habits의 핵심적인 내용이나 중요 포인트가 적절히 다뤄졌다면 충분합니다.
+           - 일부 세부사항이 누락되었더라도, 전반적인 방향성이 맞다면 '반영되었다'고 판단하세요.
 
-    habits_result, _ = await llm.aparse_json(
-        messages=[
-            {"role": "system", "content": "habits.txt 내용 반영 여부와 개선이 필요한 에이전트를 판단하세요."},
-            {"role": "user", "content": habits_prompt},
-        ],
-        json_schema=habits_review_schema,
-    )
+        2. 만약 반영이 현저히 부족하다면, 어떤 에이전트(개선/칭찬/발견)의 분석이 부족한지 선택해주세요.
+           - 심각한 누락이나 방향성 오류가 있을 때만 지적해주세요.
+
+        3. 개선이 필요한 경우, 어떻게 접근해야 하는지 구체적인 피드백을 제공해주세요.
+        """
+
+        habits_result, _ = await llm_manager.aparse_json(
+            messages=[
+                {"role": "system", "content": "habits.txt 내용 반영 여부와 개선이 필요한 에이전트를 판단하세요."},
+                {"role": "user", "content": habits_prompt},
+            ],
+            json_schema=habits_review_schema,
+        )
+
+        if habits_result["is_reflected"]:
+            state["habits_review_passed"] = True
 
     # 2. 심층 분석 품질 검토
     deep_explain_review = None
-    if "심층 분석 에이전트" in [r["agent_type"] for r in state["agent_reports"]]:
+    if "심층 분석 에이전트" in [r["agent_type"] for r in state["agent_reports"]] and not state.get(
+        "deep_explain_review_passed"
+    ):  # 심층 분석 리뷰가 아직 통과하지 않은 경우에만 실행
         deep_review_schema = {
             "type": "object",
             "properties": {"has_issues": {"type": "boolean"}, "feedback": {"type": "string"}},
@@ -382,34 +418,43 @@ async def review_report(state: MyState) -> MyState:
             r["report_content"] for r in state["agent_reports"] if r["agent_type"] == "심층 분석 에이전트"
         )
 
-        deep_explain_review, _ = await llm.aparse_json(
+        deep_explain_review, _ = await llm_manager.aparse_json(
             messages=[
                 {
                     "role": "system",
-                    "content": "심층 분석에 심각한 문제가 있는지만 판단하세요. 일반적인 개선점은 무시하고, 명백한 문제가 있을 때만 지적해주세요.",
+                    "content": "심층 분석의 치명적인 문제만을 판단하세요. 작은 개선점이나 부족한 부분은 무시하고, 심각한 오류가 있을 때만 지적해주세요.",
                 },
                 {
                     "role": "user",
-                    "content": f"""다음 심층 분석에 심각한 문제가 있는지 확인해주세요:
+                    "content": f"""다음 심층 분석에 치명적인 문제가 있는지 확인해주세요:
 
 {deep_explain_content}
 
-- 분석이 완전히 잘못된 방향으로 갔는지
-- 핵심을 완전히 놓쳤는지
-- 내용이 너무 일반적이거나 의미 없는지
+다음과 같은 심각한 문제가 있을 때만 '문제 있음'으로 판단하세요:
+- 분석이 완전히 잘못된 방향으로 가서 코드의 본질과 전혀 관계없는 내용을 다루고 있는 경우
+- 코드의 가장 중요한 변경사항이나 핵심 로직��� 전혀 언급하지 않은 경우
+- 내용이 너무 일반적이어서 어떤 코드에나 적용될 수 있는 의미 없는 분석인 경우
 
-이런 심각한 문제가 있을 때만 피드백을 주세요.""",
+다음의 경우는 '문제 없음'으로 판단하세요:
+- 일부 세부 내용이 부족하더라도 전반적인 분석 방향이 맞는 경우
+- 모든 변경사항을 다루지 않았지만 주요 변경사항은 분석한 경우
+- 추가적인 개선이 가능하지만 기본적인 통찰은 제공하는 경우
+
+심각한 문제가 있을 때만 피드백을 제공하고, 작은 개선사항은 무시하세요.""",
                 },
             ],
             json_schema=deep_review_schema,
         )
+
+        if not deep_explain_review["has_issues"]:
+            state["deep_explain_review_passed"] = True
 
     # 3. 결과 통합 및 재실행 노드 결정
     nodes_to_rerun = []
     feedback_messages = []
     agents_to_improve = []
 
-    if not habits_result["is_reflected"]:
+    if habits_result and not habits_result["is_reflected"]:
         agents_to_improve.extend(habits_result["agent_types"])
         state["agent_feedbacks"] = [
             {"agent_type": agent_type, "improvement_suggestions": habits_result["feedback"], "missing_points": []}
@@ -441,15 +486,13 @@ def review_decision(state: MyState):
     if state["review_result"] == "ok":
         return "update_habits_post_report"
 
-    if state["retry_count"] > 2:
+    if state["retry_count"] > 5:
         return "fallback_node"
 
     nodes_to_rerun = state.get("nodes_to_rerun", [])
 
-    # habits 관련 피드백이 있는 경우 run_agents_in_parallel로
     if "run_agents_in_parallel" in nodes_to_rerun:
         return "run_agents_in_parallel"
-    # 심층 분석만 문제가 있는 경우
     elif "deep_explainer_node" in nodes_to_rerun:
         return "deep_explainer_node"
 
@@ -543,7 +586,30 @@ graph.add_conditional_edges(
 
 graph.add_edge("update_habits_post_report", END)
 graph.add_edge("fallback_node", END)
-graph.add_edge("error_node", END)
+
+
+# error_node에서 조건부 엣지 추가
+def error_decision(state: MyState):
+    if state["fallback_mode"]:
+        return "fallback_node"
+    else:
+        # 에러가 발생한 노드로 다시 라우팅
+        return state["error_node_name"]
+
+
+graph.add_conditional_edges(
+    "error_node",
+    error_decision,
+    {
+        "fallback_node": "fallback_node",
+        "select_topics": "select_topics",
+        "analyze_habits": "analyze_habits",
+        "run_agents_in_parallel": "run_agents_in_parallel",
+        "deep_explainer_node": "deep_explainer_node",
+        "integrate_reports": "integrate_reports",
+        "review_report": "review_report",
+    },
+)
 
 app = graph.compile()
 # 그래프를 이미지로 저장
@@ -552,7 +618,7 @@ with open("graph.png", "wb") as f:
     f.write(graph_png)
 
 
-# 만약 직접 테스트하려면 run_graph 호출
+# 만약 접 테스트하려면 run_graph 호출
 async def run_graph():
     changes = db_manager.get_recent_changes()
     recent_topics = memory.get_recent_topics(days=3)
@@ -580,11 +646,13 @@ async def run_graph():
         "deep_explain_result": None,
         "nodes_to_rerun": [],
         "agent_feedbacks": [],
+        "habits_review_passed": False,
+        "deep_explain_review_passed": False,
     }
 
     result = await app.ainvoke(
         initial_state,
-        {"recursion_limit": 25},  # 최대 25번의 노드 실행으로 제한
+        {"recursion_limit": 30},  # 최대 25번의 노드 실행으로 제
     )
 
     with open(f"report_{today}.txt", "w", encoding="utf-8") as f:

@@ -2,9 +2,15 @@
 from model import ReportIntegratorInput, ReportIntegratorOutput
 from datetime import datetime
 import re
+from textwrap import dedent
+
+from ai_analyzer.llm_manager import LLMManager
 
 
 class ReportIntegrator:
+    def __init__(self, llm_manager: LLMManager):
+        self.llm_manager = llm_manager
+
     def _get_section_style(self, agent_type: str) -> dict:
         """각 섹션별 스타일 정보 반환"""
         styles = {
@@ -50,23 +56,6 @@ class ReportIntegrator:
 
         return header
 
-    def _format_report_footer(self) -> list:
-        """리포트 푸터를 더 세련되게 포맷팅"""
-        return [
-            "",
-            "## ✨ 마무리",
-            "",
-            "> *더 나은 코드를 위한 여정을 응원합니다*",
-            ">",
-            "> 작은 개선이 모여 큰 변화가 됩니다",
-            "",
-            "---",
-            "",
-            "<div class='footer-meta' style='text-align: center;'>",
-            "🤖 <strong> CodeCast AI </strong> | 문의: support@codecast.ai | 버전: 1.0.0",
-            "</div>",
-        ]
-
     def _remove_single_backticks(self, text: str) -> str:
         """단일 백틱을 제거하는 함수"""
         # 3개의 연속된 백틱은 보존하기 위해 임시 토큰으로 대체
@@ -81,13 +70,62 @@ class ReportIntegrator:
 
         return text
 
-    def run(self, input: ReportIntegratorInput) -> ReportIntegratorOutput:
+    def _preprocess_markdown_lists(self, text: str) -> str:
+        """마크다운 리스트 전처리 함수"""
+        # 콜론(:) 뒤에 바로 리스트가 시작되는 패턴 찾기
+        pattern = r"(.*?):\s*\n-\s"
+
+        def repl(match):
+            # 콜론 뒤에 빈 줄 추가
+            return f"{match.group(1)}:\n\n- "
+
+        # 패턴 치환
+        processed_text = re.sub(pattern, repl, text)
+        return processed_text
+
+    async def _generate_dynamic_footer(self, report_content: str) -> str:
+        """리포트 내용을 기반으로 간단한 마무리 메시지 생성"""
+        prompt = dedent(f"""
+            다음 코드 분석 리포트의 내용을 바탕으로 간단한 마무리 메시지를 작성해주세요:
+
+            [리포트 내용]
+            {report_content}
+
+            요구사항:
+            1. 리포트의 핵심 내용을 3줄로 요약
+            2. 개발자를 위한 짧은 조언이나 명언 한 줄 추가
+            3. 간결하고 명확하게 작성
+            
+            출력 형식:
+            ## 마무리
+            
+            ### 요약
+            - [첫 번째 요약]
+            - [두 번째 요약]
+            - [세 번째 요약]
+
+            > [개발자를 위한 조언/명언]
+        """).strip()
+
+        footer_message = await self.llm_manager.agenerate(prompt=prompt)
+        if not footer_message:
+            return "\n## 마무리\n\n> 작은 개선이 모여 큰 혁신이 됩니다. ✨\n"
+
+        return footer_message
+
+    async def run(self, input: ReportIntegratorInput) -> ReportIntegratorOutput:
         """에이전트별 리포트를 통합하여 반환"""
         report_parts = ["## 📌 오늘의 주요 주제\n"]
 
-        # 헤더에 주요 주제 추가
-        if input.agent_reports:
-            for rep in input.agent_reports:
+        # 중복 제거를 위한 처리
+        unique_reports = {}
+        for rep in input.agent_reports:
+            # agent_type을 키로 사용하여 가장 최신의 리포트만 유지
+            unique_reports[rep["agent_type"]] = rep
+
+        # 헤더에 주요 주제 추가 (중복 제거된 리포트 사용)
+        if unique_reports:
+            for rep in unique_reports.values():
                 style = self._get_section_style(rep["agent_type"])
                 report_parts.append(f"- {style['emoji']} **{rep['topic']}**")
             report_parts.append("")
@@ -95,12 +133,12 @@ class ReportIntegrator:
             report_parts.extend(["> 현재 분석할 변경사항이 없습니다.", ""])
 
         # 빈 리포트 처리
-        if not input.agent_reports:
+        if not unique_reports:
             report_parts.extend(self._format_empty_report())
         else:
-            # 각 에이전트 리포트 처리
+            # 각 에이전트 리포트 처리 (중복 제거된 리포트 사용)
             first_non_deep = True
-            for rep in input.agent_reports:
+            for rep in unique_reports.values():
                 # 심층 분석 에이전트는 나중에 별도로 처리
                 if rep["agent_type"] == "심층 분석 에이전트":
                     continue
@@ -116,10 +154,7 @@ class ReportIntegrator:
                 report_parts.append("<<AGENT_SECTION_END>>")
 
             # 심층 분석 에이전트 처리
-            deep_analysis = next(
-                (rep for rep in input.agent_reports if rep["agent_type"] == "심층 분석 에이전트"), None
-            )
-
+            deep_analysis = unique_reports.get("심층 분석 에이전트")
             if deep_analysis:
                 report_parts.extend(
                     [
@@ -131,23 +166,17 @@ class ReportIntegrator:
                     ]
                 )
 
-        # 푸터 추가
+        # 동적 마무리 메시지 생성
+        footer_message = await self._generate_dynamic_footer("\n".join(report_parts))
         report_parts.extend(
             [
-                "\n## ✨ 마무리",
+                footer_message,
                 "",
-                "> *더 나은 코드를 위한 여정을 응원합니다*",
-                ">",
-                "> 작은 개선이 모여 큰 변화가 됩니다",
-                "",
-                "---",
-                "",
-                "<div class='footer'>",
+                "<div class='report-footer'>",
                 "  <div class='footer-content'>",
-                "    <p>🤖 <strong>CodeCast AI</strong></p>",
-                "    <p>분석 생성 시간: " + datetime.now().strftime("%Y-%m-%d %H:%M") + "</p>",
-                "    <p>문의: support@codecast.ai</p>",
-                "    <p>버전: 1.0.0</p>",
+                "    <div class='footer-brand'>CodeCast AI</div>",
+                f"    <div class='footer-meta'>생성 시간: {datetime.now().strftime('%Y-%m-%d %H:%M')}</div>",
+                "    <div class='footer-contact'>support@codecast.ai | v1.0.0</div>",
                 "  </div>",
                 "</div>",
             ]
@@ -161,5 +190,8 @@ class ReportIntegrator:
 
         # 단일 백틱 제거
         final_report = self._remove_single_backticks(final_report)
+
+        # 마크다운 리스트 전처리
+        final_report = self._preprocess_markdown_lists(final_report)
 
         return ReportIntegratorOutput(report=final_report)

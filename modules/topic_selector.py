@@ -46,9 +46,9 @@ topic_selection_schema = {
 
 
 class TopicSelector:
-    def __init__(self, memory, model=Config.DEFAULT_LLM_MODEL):
-        self.llm = LLMManager(model=model)
+    def __init__(self, memory, llm_manager: LLMManager):
         self.memory = memory
+        self.llm = llm_manager
         self.max_retries = Config.TOPIC_SELECTOR_MAX_RETRIES
         self.valid_agent_types = {"개선 에이전트", "칭찬 에이전트", "발견 에이전트"}
 
@@ -57,28 +57,59 @@ class TopicSelector:
         return dedent("""
             당신은 코드 변경사항을 분석하여 세 명의 코드 리뷰어를 위한 토픽을 선정하는 전문가입니다.
             
-            당신의 역할과 책임:
-            1. 코드 변경사항을 분석하여 각 리뷰어의 특성에 맞는 주제를 ��굴합니다
-            2. 각 리뷰어가 자신의 전문 영역에서 최고의 가치를 제공할 수 있는 주제를 선정합니다
-            3. 구체적이고 실행 가능한 리뷰 주제를 도출합니다
-            4. JSON 스키마를 준수하는 결과물만 반환합니다
+            # 리뷰어 특성
+            1. 개선 에이전트 (나쁜놈)
+               - "이봐, 이건 좀 아닌데..." 라고 말할만한 코���를 찾습니다
+               - 개선이 필요한 패턴이나 잠재적 문제를 발견합니다
             
-            주제 선정 시 지켜야 할 원칙:
-            1. 구체성: 각 주제는 코드의 특정 부분이나 패턴을 명확히 지정해야 합니다
-            2. 실용성: 실제로 개선, 칭찬, 혹은 새로운 시도가 가능한 주제여야 합니다
-            3. 독립성: 각 리뷰어의 주제는 서로 중복되지 않고 명확히 구분되어야 합니다
-            4. 연관성: 변경된 코드와 직접적으로 연관된 주제를 선정해야 합니다
-        
-            결과물 형식:
-            - JSON 스키마에 정확히 부합하는 객체만 반환합니다
-            - 추가 설명이나 주석 없이 순수 JSON 형태로 출력합니다
-            - 모든 필수 필드(topic, context, related_files)를 포함해야 합니다
+            2. 칭찬 에이전트 (좋은놈)
+               - "오, 이건 정말 잘했네!" 라고 말할만한 코드를 찾습니다
+               - 잘 작성된 코드나 좋은 설계 결정을 발견합니다
+            
+            3. 발견 에이전트 (새로운놈)
+               - "이거 이렇게 해보면 어때?" 라고 제안할 내용을 찾습니다
+               - 새로운 접근 방식이나 개선 아이디어를 제시합니다
+            
+            # 토픽 선정 원칙
+            1. 구체성
+               - 코드의 특정 부분이나 패���을 명확히 지정하세요
+               - 예시: "함수 X의 매개변수 검증 로직" (O)
+               - 예시: "전반적인 코드 구조" (X)
+            
+            2. 실용성
+               - 실제로 적용 가능한 개선/칭찬/제안이어야 합니다
+               - 예시: "캐시 도입으로 성능 개선" (O)
+               - 예시: "전체 시스템 재설계" (X)
+            
+            3. 독립성
+               - 각 리뷰어의 토픽이 서로 겹치지 않아야 합니다
+               - 예시: 같은 함수를 다른 관점에서 보는 것은 가능
+               - 예시: 같은 문제점을 지적하는 것은 불가
+            
+            4. 연관성
+               - 변경된 코드와 직접 관련된 토픽만 선정하세요
+               - 예시: 수정된 함수의 개선점 (O)
+               - 예시: 수정되지 않은 코드의 문제점 (X)
+            
+            # 출력 형식
+            다음 JSON 스키마를 정확히 준수하세요:
+            {
+              "개선 에이전트": {
+                "topic": "구체적인 주제",
+                "context": "왜 이 주제가 중요한지 설명",
+                "related_files": ["관련 파일 경로"]
+              },
+              "칭찬 에이전트": { ... },
+              "발견 에이전트": { ... }
+            }
+            
+            추가 설명이나 주석 없이 순수 JSON만 반환하세요.
         """).strip()
 
     @staticmethod
     def get_user_prompt(changes_text: str, recent_topics_text: str, allow_duplicates: bool) -> str:
         base_prompt = dedent(f"""
-            아래 코드 변경사항과 최근 주제를 바탕으�� 세 명의 리뷰어에게 맞는 주제를 선정해주세요.
+            아래 코드 변경사항과 최근 주제를 바탕으로 세 명의 리뷰어에게 맞는 주제를 선정해주세요.
     
             ### 리뷰어 정보
             1. 개선 에이전트 (나쁜놈):
@@ -145,21 +176,22 @@ class TopicSelector:
 
         # 최대 시도 횟수만큼 반복
         for attempt in range(self.max_retries):
+            print(f"[INFO] Attempting topic selection (attempt {attempt + 1}/{self.max_retries})")
             data = await self._attempt_new_topics_selection(changes, recent_topic_texts, allow_duplicates=False)
 
-            # 에이전트 타입 검증
-            if data and self.validate_agent_types(data):
+            if data:
                 return TopicSelectorOutput(selected_topics=data)
             else:
-                print(f"Invalid agent types detected, retrying... (attempt {attempt + 1}/{self.max_retries})")
-                continue
+                print(f"[INFO] Topic selection failed, retrying... (attempt {attempt + 1}/{self.max_retries})")
 
         # 모든 시도 실패 시 중복 허용 모드로 한 번 더 시도
+        print("[INFO] All attempts failed, trying with duplicates allowed...")
         data = await self._attempt_new_topics_selection(changes, recent_topic_texts, allow_duplicates=True)
-        if data and self.validate_agent_types(data):
+
+        if data:
             return TopicSelectorOutput(selected_topics=data)
 
-        # 그래도 실패하면 빈 결과 반환
+        print("[WARNING] All topic selection attempts failed")
         return TopicSelectorOutput(selected_topics={})
 
     async def _attempt_new_topics_selection(
@@ -173,23 +205,33 @@ class TopicSelector:
             {"role": "user", "content": self.get_user_prompt(changes_text, recent_topics_text, allow_duplicates)},
         ]
 
-        parsed_data, error = await self.llm.aparse_json(
-            messages=messages,
-            json_schema=topic_selection_schema,
-            temperature=0.7,
-            response_format={"type": "json_object"},
-        )
+        try:
+            parsed_data, error = await self.llm.aparse_json(
+                messages=messages,
+                json_schema=topic_selection_schema,
+                temperature=0.7,
+                response_format={"type": "json_object"},
+            )
 
-        if error:
-            print(f"Topic selection attempt failed: {error}")
+            if error:
+                print(f"[ERROR] Topic selection attempt failed: {error}")
+                return None
+
+            # 에이전트 타입 검증
+            if not self.validate_agent_types(parsed_data):
+                print("[ERROR] Invalid agent types in response")
+                return None
+
+            # allow_duplicates가 False일 경우에만 중복 체크
+            if not allow_duplicates and self._is_topic_overlapping(parsed_data, recent_topic_texts):
+                print("[INFO] Topic overlaps with recent topics.")
+                return None
+
+            return parsed_data
+
+        except Exception as e:
+            print(f"[ERROR] Unexpected error in topic selection: {str(e)}")
             return None
-
-        # allow_duplicates가 False일 경우에만 중복 체크
-        if not allow_duplicates and self._is_topic_overlapping(parsed_data, recent_topic_texts):
-            print("Topic overlaps with recent topics.")
-            return None
-
-        return parsed_data
 
     def _summarize_changes_for_prompt(self, changes: List[Dict]) -> str:
         changes_summary = []

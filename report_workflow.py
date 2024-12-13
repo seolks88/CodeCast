@@ -117,7 +117,7 @@ async def generate_advice_node(state: MyState) -> MyState:
         # 습관 정보 기반 조언
         advice = (
             f"사소한 변경이 감지되어 전체 분석을 생략합니다.\n\n"
-            f"당신의 습관을 기반���로 한 프로그래밍 조언:\n\n{habits_content}\n\n"
+            f"당신의 습관을 기반으로 한 프로그래밍 조언:\n\n{habits_content}\n\n"
             "이 습관을 더 발전시키기 위해, 매일 15분씩 리팩토링이나 코드 리뷰 연습을 시도해보세요!"
         )
     else:
@@ -365,7 +365,7 @@ async def review_report(state: MyState) -> MyState:
             },
             "agent_types": {
                 "type": "array",
-                "items": {"type": "string", "enum": ["개선 에���전트", "칭찬 에이전트", "견 에이전트"]},
+                "items": {"type": "string", "enum": ["개선 에이전트", "칭찬 에이전트", "견 에이전트"]},
             },
         },
         "required": ["is_reflected", "feedback", "agent_feedbacks", "agent_types"],
@@ -390,7 +390,7 @@ async def review_report(state: MyState) -> MyState:
         2. 만약 반영이 현저히 부족하다면, 어떤 에이전트(개선/칭찬/발견)의 분석이 부족한지 선택해주세요.
            - 심각한 누락이나 방향성 오류가 있을 때만 지적해주세요.
 
-        3. 개선이 필요한 경우, 어떻게 접근해야 하는지 구체적인 피��백을 제공해주세요.
+        3. 개선이 필요한 경우, 어떻게 접근해야 하는지 구체적인 피드백을 제공해주세요.
         """
 
         habits_result, _ = await llm_manager.aparse_json(

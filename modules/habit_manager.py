@@ -59,7 +59,7 @@ class HabitManager:
      * 최신 컨텍스트로 내용 업데이트
      * last_updated를 {today}로 변경
    - 오늘 보고서에서 언급되지 않은 경우:
-     * ���존 컨텍스트 유지
+     * 기존 컨텍스트 유지
      * 기존 last_updated 유지
 
 5. 작성 형식:

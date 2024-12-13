@@ -32,21 +32,24 @@ class VectorDBClient:
             ids=[doc_id],
         )
 
-    def search(self, query_embedding: list, top_k: int, namespace: str):
+    def search(self, query_embedding: list, top_k: int, namespace: str, days: int = 7):
         """
         query_embedding으로 유사도 검색 수행.
-        반환 형식:
-        [
-          {
-            "id": str,
-            "metadata": dict,
-            "score": float
-          },
-          ...
-        ]
+        days: 최근 몇일 내의 데이터만 검색할지 지정
         """
         collection = self.collections[namespace]
-        results = collection.query(query_embeddings=[query_embedding], n_results=top_k)
+
+        # 날짜 필터 적용
+        from datetime import datetime, timedelta
+
+        cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=top_k,
+            where={"date": {"$gte": cutoff_date}},  # 날짜 필터링
+        )
+
         output = []
         for i, doc_id in enumerate(results["ids"][0]):
             distance = results["distances"][0][i]

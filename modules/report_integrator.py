@@ -95,6 +95,7 @@ class ReportIntegrator:
             1. 리포트의 핵심 내용을 3줄로 요약
             2. 개발자를 위한 짧은 조언이나 명언 한 줄 추가
             3. 간결하고 명확하게 작성
+            4. 중요한 부분은 마크다운으로 강조
             
             출력 형식:
             ## 마무리
@@ -152,6 +153,7 @@ class ReportIntegrator:
                 report_parts.append("<<AGENT_SECTION_START>>")
                 report_parts.append(rep["report_content"].strip())
                 report_parts.append("<<AGENT_SECTION_END>>")
+                report_parts.append("")
 
             # 심층 분석 에이전트 처리
             deep_analysis = unique_reports.get("심층 분석 에이전트")
@@ -166,22 +168,6 @@ class ReportIntegrator:
                     ]
                 )
 
-        # 동적 마무리 메시지 생성
-        footer_message = await self._generate_dynamic_footer("\n".join(report_parts))
-        report_parts.extend(
-            [
-                footer_message,
-                "",
-                "<div class='report-footer'>",
-                "  <div class='footer-content'>",
-                "    <div class='footer-brand'>CodeCast AI</div>",
-                f"    <div class='footer-meta'>생성 시간: {datetime.now().strftime('%Y-%m-%d %H:%M')}</div>",
-                "    <div class='footer-contact'>support@codecast.ai | v1.0.0</div>",
-                "  </div>",
-                "</div>",
-            ]
-        )
-
         # 최종 리포트 생성
         final_report = "\n".join(report_parts)
 
@@ -193,5 +179,8 @@ class ReportIntegrator:
 
         # 마크다운 리스트 전처리
         final_report = self._preprocess_markdown_lists(final_report)
+
+        footer_message = await self._generate_dynamic_footer("\n".join(report_parts))
+        final_report = f"{final_report}\n{footer_message}"
 
         return ReportIntegratorOutput(report=final_report)

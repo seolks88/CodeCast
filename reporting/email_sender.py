@@ -136,6 +136,17 @@ class EmailSender:
     def _create_email_content(self, analysis, analysis_time):
         converted_html = self._convert_markdown_to_html(analysis)
 
+        footer_html = """
+            <div class="footer" style="text-align: center; padding: 2rem 0; color: #64748B;">
+                <div style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem;">⚡️ CodeCast AI</div>
+                <div style="font-size: 0.875rem;">
+                    <a href="mailto:support@codecast.ai" style="color: #3B82F6; text-decoration: none;">support@codecast.ai</a>
+                    <span style="margin: 0 0.5rem;">|</span>
+                    <span>v1.0.0</span>
+                </div>
+            </div>
+        """
+
         html_content = f"""
         <html>
             <head>
@@ -166,8 +177,8 @@ class EmailSender:
                     }}
                     
                     .header {{
-                        background: linear-gradient(135deg, #4F46E5, #3730A3);
-                        padding: 2.5rem 3rem;
+                        background: #4F46E5;
+                        padding: 2rem 3rem 1.5rem 3rem;
                         position: relative;
                         overflow: hidden;
                     }}
@@ -239,7 +250,7 @@ class EmailSender:
                     }}
                     
                     .content-container {{
-                        padding: 0.5rem 1.5rem 0.5rem;
+                        padding: 0.5rem 2rem 0.5rem;
                         max-width: 100%;
                         line-height: 1.8;
                         background: #FFFFFF;
@@ -258,12 +269,12 @@ class EmailSender:
                     
                     h1 {{ 
                         font-size: 1.2rem;
-                        margin: 2rem 0 1.5rem;
+                        margin: 1.5rem 0 1rem;
                     }}
                     
                     h2 {{ 
                         font-size: 1.1rem;
-                        margin: 2rem 0 1.5rem;
+                        margin: 1.5rem 0 1rem;
                         padding-bottom: 0.5rem;
                         border-bottom: 2px solid #E2E8F0;
                     }}
@@ -379,19 +390,63 @@ class EmailSender:
                     }}
                     
                     .footer {{
+                        padding: 3rem 2rem;
                         text-align: center;
-                        color: #64748B;
-                        font-size: 1rem;
-                        margin-top: 5rem;
-                        padding: 2.5rem;
-                        background: #F8FAFC;
-                        border-radius: 0 0 16px 16px;
-                        border-top: 1px solid #E2E8F0;
                     }}
                     
-                    .footer p {{
-                        margin: 0.4rem 0;
+                    .footer-content {{
+                        max-width: 600px;
+                        margin: 0 auto;
+                    }}
+                    
+                    .footer-brand {{
+                        font-size: 1.25rem;
+                        font-weight: 700;
+                        color: #334155;
+                        margin-bottom: 1rem;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 0.5rem;
+                    }}
+                    
+                    .footer-brand::before {{
+                        content: '⚡️';
+                    }}
+                    
+                    .footer-meta {{
+                        color: #64748B;
+                        font-size: 0.875rem;
+                        margin: 0.5rem 0;
+                    }}
+                    
+                    .footer-contact {{
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 1rem;
                         color: #94A3B8;
+                        font-size: 0.875rem;
+                        margin-top: 1rem;
+                    }}
+                    
+                    .footer-contact a {{
+                        color: #3B82F6;
+                        text-decoration: none;
+                        transition: color 0.2s;
+                    }}
+                    
+                    .footer-contact a:hover {{
+                        color: #2563EB;
+                    }}
+                    
+                    .footer-divider {{
+                        display: inline-block;
+                        width: 4px;
+                        height: 4px;
+                        background: #CBD5E1;
+                        border-radius: 50%;
+                        margin: 0 0.5rem;
                     }}
                     
                     .content-container ul li,
@@ -483,6 +538,7 @@ class EmailSender:
                             {converted_html}
                         </div>
                     </div>
+                    {footer_html}
                 </div>
             </body>
         </html>"""
@@ -491,7 +547,7 @@ class EmailSender:
 
     def _convert_markdown_to_html(self, markdown_text: str):
         def replace_inline_backticks(text: str) -> str:
-            """코드 블록 내부의 백틱 3개를 작은���옴표 3개로 치환"""
+            """코드 블록 내부의 백틱 3개를 작은따옴표 3개로 치환"""
             lines = text.split("\n")
             in_code_block = False
             result = []
@@ -559,7 +615,7 @@ class EmailSender:
         try:
             analysis, created_at = self._get_latest_analysis()
             if not analysis:
-                print("��� 발송할 분석 결과가 없습니다")
+                print("발송할 분석 결과가 없습니다")
                 return False
 
             email_content = self._create_email_content(analysis, created_at)

@@ -6,6 +6,7 @@ from typing_extensions import TypedDict
 import asyncio
 import random
 from datetime import datetime
+from textwrap import dedent
 
 from model import (
     TopicSelectorInput,
@@ -116,7 +117,7 @@ async def generate_advice_node(state: MyState) -> MyState:
         # 습관 정보 기반 조언
         advice = (
             f"사소한 변경이 감지되어 전체 분석을 생략합니다.\n\n"
-            f"당신의 습관을 기반으로 한 프로그래밍 조언:\n\n{habits_content}\n\n"
+            f"당신의 습관을 기반���로 한 프로그래밍 조언:\n\n{habits_content}\n\n"
             "이 습관을 더 발전시키기 위해, 매일 15분씩 리팩토링이나 코드 리뷰 연습을 시도해보세요!"
         )
     else:
@@ -179,7 +180,7 @@ async def analyze_habits(state: MyState) -> MyState:
 async def run_agents_in_parallel(state: MyState) -> MyState:
     print("[INFO] run_agents_in_parallel 시작")
     # print(f"선택된 토픽: {state['selected_topics']}")
-    print(f"에이전트 실행 목록: {state.get('agents_to_improve', [])}")
+    # print(f"에이전트 실행 목록: {state.get('agents_to_improve', [])}")
 
     if state["error"] or state["fallback_mode"]:
         return state
@@ -364,7 +365,7 @@ async def review_report(state: MyState) -> MyState:
             },
             "agent_types": {
                 "type": "array",
-                "items": {"type": "string", "enum": ["개선 에이전트", "칭찬 에이전트", "견 에이전트"]},
+                "items": {"type": "string", "enum": ["개선 에���전트", "칭찬 에이전트", "견 에이전트"]},
             },
         },
         "required": ["is_reflected", "feedback", "agent_feedbacks", "agent_types"],
@@ -389,7 +390,7 @@ async def review_report(state: MyState) -> MyState:
         2. 만약 반영이 현저히 부족하다면, 어떤 에이전트(개선/칭찬/발견)의 분석이 부족한지 선택해주세요.
            - 심각한 누락이나 방향성 오류가 있을 때만 지적해주세요.
 
-        3. 개선이 필요한 경우, 어떻게 접근해야 하는지 구체적인 피드백을 제공해주세요.
+        3. 개선이 필요한 경우, 어떻게 접근해야 하는지 구체적인 피��백을 제공해주세요.
         """
 
         habits_result, _ = await llm_manager.aparse_json(
@@ -422,25 +423,41 @@ async def review_report(state: MyState) -> MyState:
             messages=[
                 {
                     "role": "system",
-                    "content": "심층 분석의 치명적인 문제만을 판단하세요. 작은 개선점이나 부족한 부분은 무시하고, 심각한 오류가 있을 때만 지적해주세요.",
+                    "content": """당신은 코드 분석의 실용적 가치를 평가하는 시니어 개발자입니다.
+                    분석이 완벽하지 않더라도, 개발자에게 도움이 되는 인사이트가 있다면 긍정적으로 평가해주세요.""",
                 },
                 {
                     "role": "user",
-                    "content": f"""다음 심층 분석에 치명적인 문제가 있는지 확인해주세요:
+                    "content": f"""다음 심층 분석을 검토해주세요:
 
 {deep_explain_content}
 
-다음과 같은 심각한 문제가 있을 때만 '문제 있음'으로 판단하세요:
-- 분석이 완전히 잘못된 방향으로 가서 코드의 본질과 전혀 관계없는 내용을 다루고 있는 경우
-- 코드의 가장 중요한 변경사항이나 핵심 로직��� 전혀 언급하지 않은 경우
-- 내용이 너무 일반적이어서 어떤 코드에나 적용될 수 있는 의미 없는 분석인 경우
+다음 중 하나라도 해당되면 '문제 없음'으로 판단하세요:
+1. 코드 변경의 의도나 목적을 이해하고 설명했다면 OK
+   - 예: "타임아웃 설정 추가는 안정성 향상을 위한 것" 등 기본적인 맥락 파악
 
-다음의 경우는 '문제 없음'으로 판단하세요:
-- 일부 세부 내용이 부족하더라도 전반적인 분석 방향이 맞는 경우
-- 모든 변경사항을 다루지 않았지만 주요 변경사항은 분석한 경우
-- 추가적인 개선이 가능하지만 기본적인 통찰은 제공하는 경우
+2. 실용적인 인사이트가 하나라도 있다면 OK
+   - 예: 구체적인 사용 사례, 주의점, 대안 제시 등
+   - 모든 측면을 다루지 않아도 됨
 
-심각한 문제가 있을 때만 피드백을 제공하고, 작은 개선사항은 무시하세요.""",
+3. 코드 예시나 실제 적용 방법을 제시했다면 OK
+   - 완벽한 구현이 아니어도 됨
+   - 기본적인 사용 방법만 보여줘도 충분
+
+4. 개발자의 성장에 도움되는 팁이 있다면 OK
+   - 코딩 스타일, 디버깅 방법, 테스트 전략 등
+   - 일반적인 조언이라도 맥락에 맞다면 가치 있음
+
+다음의 경우에만 '문제 있음'으로 판단하세요:
+1. 코드 변경과 전혀 관계없는 내용만 있는 경우
+2. 명백한 기술적 오류가 포함된 경우
+
+문제가 있다고 판단할 경우:
+1. 가장 시급한 문제점 하나만 지적해주세요
+2. 구체적인 개선 방향을 예시와 함께 제시해주세요
+3. 기존 분석에서 좋았던 부분이 있다면 함께 언급해주세요
+
+이 분석이 완벽하지 않더라도, 개발자에게 조금이라도 도움이 된다면 통과시켜주세요.""",
                 },
             ],
             json_schema=deep_review_schema,

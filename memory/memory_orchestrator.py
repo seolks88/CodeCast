@@ -1,6 +1,7 @@
 # memory/memory_orchestrator.py
 from typing import List, Dict, Any
 from memory.rerank_service import RerankService
+import os
 
 
 class MemoryOrchestrator:
@@ -96,24 +97,56 @@ class MemoryOrchestrator:
         return self.rdb.get_recent_topics(days)
 
     def find_similar_topics(self, query: str, top_k: int = 5) -> List[Dict]:
-        query_emb = self.embed.get_embedding(query, is_code=False)
-        search_results = self.vdb.search(query_emb, top_k=15, namespace="topics")
+        # 1. BM25 검색 (RDB)
+        keyword_results = self.rdb.search_topics_by_bm25(query, limit=top_k)
+        combined_results = []
 
-        # 각 결과에서 text 정보(예: raw_topic_text) 추출
-        documents = []
-        for res in search_results:
-            meta = res["metadata"]
-            topic_text = meta.get("raw_topic_text", "")
-            documents.append(topic_text)
+        # VOYAGE_API_KEY가 있는 경우에만 벡터 검색 수행
+        if os.getenv("VOYAGE_API_KEY"):
+            # 벡터 검색 (VectorDB)
+            query_emb = self.embed.get_embedding(query, is_code=False)
+            vector_results = self.vdb.search(query_emb, top_k=3, namespace="topics", days=7)
 
-        # documents가 비어있는 경우 처리 추가
-        if not documents:
-            return []
+            # 결과 병합 (중복 제거)
+            seen_ids = set()
 
-        ranked_docs = self.reranker.rerank(query, documents, top_n=5)
+            # BM25 결과 추가
+            for result in keyword_results:
+                doc_id = result["id"]
+                if doc_id not in seen_ids:
+                    seen_ids.add(doc_id)
+                    combined_results.append(
+                        {
+                            "document": result["raw_topic_text"],
+                            "score": 1.0,  # BM25 결과는 높은 점수
+                            "metadata": result,
+                        }
+                    )
 
-        # ranked_docs는 (문서, 점수) 튜플 리스트 형태로 반환되므로,
-        # 이를 다시 원하는 형식으로 재구성하여 반환 가능
-        # 예: 문서 내용 -> metadata 매핑 필요할 경우 추가 처리
-        # 여기서는 단순히 rerank 결과를 반환
-        return ranked_docs
+            # 벡터 검색 결과 추가
+            for result in vector_results:
+                doc_id = result["id"].split("_")[1]
+                if doc_id not in seen_ids:
+                    seen_ids.add(doc_id)
+                    combined_results.append(
+                        {
+                            "document": result["metadata"]["raw_topic_text"],
+                            "score": result["score"],
+                            "metadata": result["metadata"],
+                        }
+                    )
+        else:
+            # VOYAGE_API_KEY가 없는 경우 BM25 결과만 사용
+            combined_results = [
+                {"document": result["raw_topic_text"], "score": 1.0, "metadata": result} for result in keyword_results
+            ]
+
+        # Reranker가 있으면 사용, 없으면 기존 점수로 정렬
+        if hasattr(self, "reranker") and self.reranker and os.getenv("COHERE_API_KEY"):
+            documents = [r["document"] for r in combined_results]
+            reranked = self.reranker.rerank(query, documents, top_n=min(5, len(documents)))
+            return reranked
+        else:
+            # Reranker 없을 때는 기존 점수로 정렬
+            sorted_results = sorted(combined_results, key=lambda x: x["score"], reverse=True)
+            return sorted_results[:top_k]

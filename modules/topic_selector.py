@@ -59,7 +59,7 @@ class TopicSelector:
             
             # 리뷰어 특성
             1. 개선 에이전트 (나쁜놈)
-               - "이봐, 이건 좀 아닌데..." 라고 말할만한 코���를 찾습니다
+               - "이봐, 이건 좀 아닌데..." 라고 말할만한 코드를 찾습니다
                - 개선이 필요한 패턴이나 잠재적 문제를 발견합니다
             
             2. 칭찬 에이전트 (좋은놈)
@@ -72,7 +72,7 @@ class TopicSelector:
             
             # 토픽 선정 원칙
             1. 구체성
-               - 코드의 특정 부분이나 패���을 명확히 지정하세요
+               - 코드의 특정 부분이나 패턴을 명확히 지정하세요
                - 예시: "함수 X의 매개변수 검증 로직" (O)
                - 예시: "전반적인 코드 구조" (X)
             
@@ -113,7 +113,7 @@ class TopicSelector:
     
             ### 리뷰어 정보
             1. 개선 에이전트 (나쁜놈):
-               - "이봐, 이건 좀 아닌데..." 라고 말할만한 코드 습관을 찾아내는 역할
+               - "이봐, 이건 좀 아닌데..." 라고 말할만한 코드 습관을 찾��내는 역할
                - 주목할 부분:
                  * 코드 냄새 (반복되는 코드, 쓸데없이 복잡한 로직)
                  * 위험한 코딩 습관 (예외처리 누락, 메모리 누수 위험)
@@ -243,16 +243,27 @@ class TopicSelector:
     def _is_topic_overlapping(self, data: Dict, recent_topic_texts: List[str]) -> bool:
         roles = ["개선 에이전트", "칭찬 에이전트", "발견 에이전트"]
         all_topics = [data[role]["topic"] for role in roles]
+
+        # 1. 정확한 문자열 매칭
         if any(t in recent_topic_texts for t in all_topics):
             return True
-        # 추가로 벡터 검색 등으로 유사도 검사 가능
+
+        # 2. 유사도 검사
         for role in roles:
             t = data[role]["topic"]
             c = data[role]["context"]
             combined_text = f"{t}\n\n[Context]: {c}"
             similar = self.memory.find_similar_topics(combined_text, top_k=1)
-            if similar and similar[0]["score"] > 0.8:
-                return True
+
+            if similar:
+                # Reranker 사용 시: relevance_score 기준
+                if "relevance_score" in similar[0]:
+                    if similar[0]["relevance_score"] > 0.8:
+                        return True
+                # Reranker 미사용 시: 일반 유사도 점수 기준
+                elif similar[0]["score"] > 0.85:  # 벡터/BM25 점수는 더 높은 임계값 사용
+                    return True
+
         return False
 
     def validate_agent_types(self, data: dict) -> bool:

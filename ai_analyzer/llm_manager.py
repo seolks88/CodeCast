@@ -35,6 +35,16 @@ class LLMManager:
                 "top_k": 40,
                 "max_output_tokens": 4000,
             }
+            self._cleanup_context = genai.cleanup_context()
+
+    async def __aenter__(self):
+        if self.is_gemini:
+            await self._cleanup_context.__aenter__()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.is_gemini:
+            await self._cleanup_context.__aexit__(exc_type, exc_val, exc_tb)
 
     def _create_messages(self, prompt: str, system_prompt: Optional[str] = None) -> list:
         messages = []
@@ -51,15 +61,21 @@ class LLMManager:
         **kwargs,
     ) -> Optional[str]:
         try:
-            model = genai.GenerativeModel(
-                model_name=self.model.replace("gemini/", ""),
-                generation_config={**self.generation_config, "temperature": temperature},
-                system_instruction=system_prompt if system_prompt else None,
-            )
-            response = await model.generate_content_async(prompt)
-            return response.text
+            async with asyncio.timeout(30):  # 30초 타임아웃 추가
+                model = genai.GenerativeModel(
+                    model_name=self.model.replace("gemini/", ""),
+                    generation_config={**self.generation_config, "temperature": temperature},
+                    system_instruction=system_prompt if system_prompt else None,
+                )
+                response = await model.generate_content_async(prompt)
+                if response and response.text:
+                    return response.text.strip()
+                return None
+        except asyncio.TimeoutError:
+            print("[ERROR] Gemini API 호출 시간 초과")
+            return None
         except Exception as e:
-            print(f"Gemini API error: {str(e)}")
+            print(f"[ERROR] Gemini API 오류: {str(e)}")
             return None
 
     async def agenerate(

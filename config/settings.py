@@ -34,6 +34,9 @@ class Config:
     SENDER_PASSWORD = os.getenv("CODECAST_SENDER_PASSWORD")
     RECIPIENT_EMAIL = os.getenv("CODECAST_RECIPIENT_EMAIL")
 
+    DEFAULT_LLM_MODEL = os.getenv("CODECAST_DEFAULT_LLM_MODEL", "gpt-4o-mini")
+
+    # 기본 지원 파일 확장자 (사용자가 .env에서 수정 가능)
     # 기본 지원 파일 확장자 (사용자가 .env에서 수정 가능)
     DEFAULT_SUPPORTED_EXTENSIONS = {
         # 일반적인 프로그래밍 언어

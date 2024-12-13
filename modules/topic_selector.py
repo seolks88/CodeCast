@@ -2,6 +2,8 @@
 from model import TopicSelectorInput, TopicSelectorOutput
 from typing import Dict, List, Optional
 from config.settings import Config
+from ai_analyzer.llm_manager import LLMManager
+from textwrap import dedent
 
 # topic_selector.py
 topic_selection_schema = {
@@ -44,29 +46,120 @@ topic_selection_schema = {
 
 
 class TopicSelector:
-    def __init__(self, llm_client, memory):
-        self.llm_client = llm_client
+    def __init__(self, memory, model=Config.DEFAULT_LLM_MODEL):
+        self.llm = LLMManager(model=model)
         self.memory = memory
         self.max_retries = Config.TOPIC_SELECTOR_MAX_RETRIES
+        self.valid_agent_types = {"개선 에이전트", "칭찬 에이전트", "발견 에이전트"}
+
+    @staticmethod
+    def get_system_prompt() -> str:
+        return dedent("""
+            당신은 코드 변경사항을 분석하여 세 명의 코드 리뷰어를 위한 토픽을 선정하는 전문가입니다.
+            
+            당신의 역할과 책임:
+            1. 코드 변경사항을 분석하여 각 리뷰어의 특성에 맞는 주제를 ��굴합니다
+            2. 각 리뷰어가 자신의 전문 영역에서 최고의 가치를 제공할 수 있는 주제를 선정합니다
+            3. 구체적이고 실행 가능한 리뷰 주제를 도출합니다
+            4. JSON 스키마를 준수하는 결과물만 반환합니다
+            
+            주제 선정 시 지켜야 할 원칙:
+            1. 구체성: 각 주제는 코드의 특정 부분이나 패턴을 명확히 지정해야 합니다
+            2. 실용성: 실제로 개선, 칭찬, 혹은 새로운 시도가 가능한 주제여야 합니다
+            3. 독립성: 각 리뷰어의 주제는 서로 중복되지 않고 명확히 구분되어야 합니다
+            4. 연관성: 변경된 코드와 직접적으로 연관된 주제를 선정해야 합니다
+        
+            결과물 형식:
+            - JSON 스키마에 정확히 부합하는 객체만 반환합니다
+            - 추가 설명이나 주석 없이 순수 JSON 형태로 출력합니다
+            - 모든 필수 필드(topic, context, related_files)를 포함해야 합니다
+        """).strip()
+
+    @staticmethod
+    def get_user_prompt(changes_text: str, recent_topics_text: str, allow_duplicates: bool) -> str:
+        base_prompt = dedent(f"""
+            아래 코드 변경사항과 최근 주제를 바탕으�� 세 명의 리뷰어에게 맞는 주제를 선정해주세요.
+    
+            ### 리뷰어 정보
+            1. 개선 에이전트 (나쁜놈):
+               - "이봐, 이건 좀 아닌데..." 라고 말할만한 코드 습관을 찾아내는 역할
+               - 주목할 부분:
+                 * 코드 냄새 (반복되는 코드, 쓸데없이 복잡한 로직)
+                 * 위험한 코딩 습관 (예외처리 누락, 메모리 누수 위험)
+                 * 유지보수하기 어려운 구조
+                 * 성능 저하를 일으킬 수 있는 패턴
+                 * 버그 유발 가능성이 높은 코드
+    
+            2. 칭찬 에이전트 (좋은놈):
+               - "오, 이건 정말 잘했네!" 라고 칭찬할만한 코드를 발견하는 역할
+               - 주목할 부분:
+                 * 깔끔하고 읽기 쉬운 코드
+                 * 영리한 문제 해결 방식
+                 * 재사용성이 뛰어난 설계
+                 * 효율적인 알고리즘 선택
+                 * 센스있는 에러 처리
+    
+            3. 발견 에이전트 (새로운놈):
+               - "이거 이렇게 해보면 어때?" 라고 새로운 관점을 제시하는 역할
+               - 주목할 부분:
+                 * 최신 언어 기능으로 개선할 부분
+                 * 새로운 라이브러리로 대체 가능한 부분
+                 * 더 현대적인 코딩 패턴 제안
+                 * 테스트나 유지보수를 더 쉽게 만들 수 있는 방법
+                 * 개발자 경험을 개선할 수 있는 제안
+    
+            ### 분석할 코드 변경사항
+            {changes_text}
+    
+            ### 최근 리뷰 주제 목록
+            {recent_topics_text}
+            
+            ### 중복 처리 규칙:
+            {
+            '''
+            [중복 허용 모드]
+            - 최근 주제와의 중복이 허용됩니다
+            - 단, 각 리뷰어 간의 주제는 중복되지 않아야 합니다
+            '''
+            if allow_duplicates else
+            '''
+            [중복 방지 모드]
+            - 최근 주제와 절대 중복되지 않아야 합니다
+            - 유사어, 동일 개념, 포함 관계의 주제도 피해주세요
+            - 완전히 새로운 관점의 주제를 선정해주세요
+            '''
+            }
+    
+            각 리뷰어의 주제에는 다음을 포함해주세요:
+            1. topic: 구체적이고 명확한 리뷰 주제
+            2. context: 왜 이 주제가 중요한지 설명
+            3. related_files: 주제와 관련된 파일 경로 목록
+        """).strip()
+
+        return base_prompt
 
     async def run(self, input: TopicSelectorInput) -> TopicSelectorOutput:
         changes = input.changes
         recent_topics = input.recent_topics
         recent_topic_texts = [t["raw_topic_text"] for t in recent_topics]
 
-        # 1단계: 기존 로직대로 중복을 허용하지 않는 프롬프트로 시도
+        # 최대 시도 횟수만큼 반복
         for attempt in range(self.max_retries):
             data = await self._attempt_new_topics_selection(changes, recent_topic_texts, allow_duplicates=False)
-            if data:
-                return TopicSelectorOutput(selected_topics=data)
 
-        # 2단계: 모든 시도가 실패했으므로, 이제 중복 허용 모드로 프롬프트를 변경해서 시도
+            # 에이전트 타입 검증
+            if data and self.validate_agent_types(data):
+                return TopicSelectorOutput(selected_topics=data)
+            else:
+                print(f"Invalid agent types detected, retrying... (attempt {attempt + 1}/{self.max_retries})")
+                continue
+
+        # 모든 시도 실패 시 중복 허용 모드로 한 번 더 시도
         data = await self._attempt_new_topics_selection(changes, recent_topic_texts, allow_duplicates=True)
-        if data:
+        if data and self.validate_agent_types(data):
             return TopicSelectorOutput(selected_topics=data)
 
-        # 그래도 실패하면 fallback으로 이전 로직(에러 처리 등) 할 수 있음
-        # 여기서는 그냥 빈 dict 반환
+        # 그래도 실패하면 빈 결과 반환
         return TopicSelectorOutput(selected_topics={})
 
     async def _attempt_new_topics_selection(
@@ -75,42 +168,21 @@ class TopicSelector:
         changes_text = self._summarize_changes_for_prompt(changes)
         recent_topics_text = ", ".join(recent_topic_texts) if recent_topic_texts else "없음"
 
-        prompt = self._get_topic_selection_prompt(changes_text, recent_topics_text, allow_duplicates)
         messages = [
-            {
-                "role": "system",
-                "content": (
-                    "당신은 JSON 파서입니다. 아래 JSON 스키마를 반드시 준수하는 올바른 JSON만 반환하세요.\n"
-                    "JSON 이외의 텍스트, 추가 설명, 주석 없이 스키마에 맞는 JSON 객체만 출력하세요.\n"
-                    "스키마에 맞지 않으면 거부(refusal)하세요."
-                ),
-            },
-            {"role": "user", "content": prompt},
+            {"role": "system", "content": self.get_system_prompt()},
+            {"role": "user", "content": self.get_user_prompt(changes_text, recent_topics_text, allow_duplicates)},
         ]
 
-        response_format = {
-            "type": "json_schema",
-            "json_schema": {"name": "topic_selection_schema", "strict": True, "schema": topic_selection_schema},
-        }
+        parsed_data, error = await self.llm.aparse_json(
+            messages=messages,
+            json_schema=topic_selection_schema,
+            temperature=0.7,
+            response_format={"type": "json_object"},
+        )
 
-        parsed_data, refusal = await self.llm_client.parse_json(messages, response_format=response_format)
-
-        if refusal:
-            print(f"Topic selection attempt refused: {refusal}")
+        if error:
+            print(f"Topic selection attempt failed: {error}")
             return None
-
-        if parsed_data is None:
-            print("No parsed data returned from LLM.")
-            return None
-
-        if isinstance(parsed_data, str):
-            import json
-
-            try:
-                parsed_data = json.loads(parsed_data)
-            except json.JSONDecodeError:
-                print("Invalid JSON content returned from LLM.")
-                return None
 
         # allow_duplicates가 False일 경우에만 중복 체크
         if not allow_duplicates and self._is_topic_overlapping(parsed_data, recent_topic_texts):
@@ -141,59 +213,6 @@ class TopicSelector:
                 return True
         return False
 
-    def _get_topic_selection_prompt(self, changes_text: str, recent_topics_text: str, allow_duplicates: bool) -> str:
-        # 기본 프롬프트
-        base_prompt = f"""### 컨텍스트
-아래는 최근 3일간 다룬 주제와 오늘 변경된 코드 내용입니다:
-
-최근 3일 주제: 
----최근 3일 주제 시작---
-{recent_topics_text}
----최근 3일 주제 끝---
-
-오늘의 변경사항 요약:
----변경사항 시작---
-{changes_text}
----변경사항 끝---
-
-### 지시사항
-1. 먼저 위 변경사항에서 사용된 주요 프로그래밍 언어(들)를 파악하세요.
-2. 해당 언어(들)의 특성과 변경사항을 고려하여 각 에이전트의 역할에 맞는 주제를 선정해주세요.
-3. 각 주제와 관련된 파일들의 경로를 명시해주세요. 주제와 파일의 관련성을 신중히 고려하세요.
-
-각 에이전트별 선정 기준:
-- 개선 에이전트: 변경된 코드에서 발견된 해당 언어의 안티패턴이나 개선이 필요한 부분
-- 칭찬 에이전트: 변경사항에서 잘 적용된 해당 언어의 패턴이나 더 개선할 수 있는 코딩 스타일
-- 발견 에이전트: 변경된 코드에 적용 가능한 해당 언어의 최신 기능이나 더 나은 구현 방법
-
-반환 형식에서 related_files는 해당 주제와 가장 밀접하게 관련된 파일 경로들의 배열이어야 합니다.
-"""
-
-        # 중복 허용 여부에 따라 프롬프트 추가 조건
-        if allow_duplicates:
-            # 중복 허용 모드: 기존 주제와 겹쳐도 괜찮다는 점 명시
-            additional_rules = """
-### 주의사항 (중복 허용 모드)
-- 이제는 최근 3일간 다룬 주제와 중복되어도 괜찮습니다.
-- 이전에 다뤘던 주제를 다시 선택하거나, 유사한 주제로 복습/확장해도 됩니다.
-- 단, 여전히 각 에이전트간 주제는 서로 다른 관점을 유지해주세요.
-"""
-        else:
-            # 중복 불가 모드(기존 로직)
-            additional_rules = """
-### 주의사항 (엄격한 중복 방지)
-- 각 주제는 서로 중복되지 않아야 합니다
-- 최근 3일간 다룬 주제와 절대 중복되지 않아야 합니다:
-  * 동일한 주제는 물론, 단어만 다르고 의미가 비슷한 주제도 피해주세요
-  * 다음과 같은 경우는 모두 중복으로 간주됩니다:
-    - 동일 단어를 사용한 주제 ("코드 정리" vs "코드 정리하기")
-    - 유사어를 사용한 주제 ("제거" vs "정리" vs "다루기" vs "관리")
-    - 상위/하위 개념의 주제 ("주석 관리" vs "불필요한 주석")
-    - 포함 관계의 주제 ("주석 제거" vs "주석 제거 및 정리")
-  * 기존 주제와 관련된 모든 측면(제거, 개선, 관리, 다루기 등)을 피해주세요
-- 완전히 새로운 관점이나 다른 영역의 주제를 선정하세요
-- 변경된 코드의 프로그래밍 언어와 직접적으로 연관된 주제를 선정하세요
-- 구체적이고 실행 가능한 개선점을 담은 주제를 선정하세요
-"""
-
-        return base_prompt + additional_rules
+    def validate_agent_types(self, data: dict) -> bool:
+        """에이전트 타입 검증 - 정확히 세 개의 올바른 에이전트 타입이 있어야 함"""
+        return set(data.keys()) == self.valid_agent_types

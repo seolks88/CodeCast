@@ -9,7 +9,7 @@ class TopicSelectorInput(BaseModel):
 
 
 class TopicSelectorOutput(BaseModel):
-    selected_topics: Dict[str, Dict[str, str]]
+    selected_topics: Dict[str, Dict[str, Any]]
 
 
 class ReportIntegratorInput(BaseModel):
@@ -28,6 +28,9 @@ class AgentInput(BaseModel):
     habit_description: str
     full_code: str
     diff: str
+    feedback: str = ""
+    missing_points: List[str] = []
+    current_report: str = ""
 
 
 class AgentOutput(BaseModel):

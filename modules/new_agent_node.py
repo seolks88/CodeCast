@@ -2,24 +2,30 @@
 from model import AgentInput, AgentOutput
 from ai_analyzer.prompt_manager import AgentPrompts
 from datetime import datetime
+from ai_analyzer.llm_manager import LLMManager
+from config.settings import Config
 
 
 class NewAgentNode:
-    def __init__(self, llm_client, memory):
-        self.llm_client = llm_client
+    def __init__(self, memory, model=Config.DEFAULT_LLM_MODEL):
+        self.llm = LLMManager(model=model)
         self.memory = memory
 
     async def run(self, input: AgentInput) -> AgentOutput:
-        prompt = AgentPrompts.get_new_agent_prompt(
-            input.topic_text,
-            input.context_info,
-            input.user_context,
-            input.full_code,
-            input.diff,
+        print(f"[INFO] NewAgentNode run: {input.topic_text}")
+        system_prompt, user_prompt = AgentPrompts.get_new_agent_prompts(
+            topic_text=input.topic_text,
+            context_info=input.context_info,
+            user_context=input.user_context,
+            full_code=input.full_code,
+            diff=input.diff,
+            feedback=input.feedback,
+            missing_points=input.missing_points,
+            current_report=input.current_report,
         )
-        response = await self.llm_client.analyze_text(prompt)
+        response = await self.llm.agenerate(prompt=user_prompt, system_prompt=system_prompt, temperature=0.4)
         report_id = self._store_agent_report(input.agent_type, input.topic_text, input.context_info, response)
-
+        print(f"[INFO] NewAgentNode completed: {report_id}")
         return AgentOutput(
             agent_type=input.agent_type, topic=input.topic_text, report_id=report_id, report_content=response
         )

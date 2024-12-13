@@ -150,7 +150,7 @@ class EmailSender:
                         line-height: 1.8;
                         -webkit-font-smoothing: antialiased;
                         -moz-osx-font-smoothing: grayscale;
-                        font-size: 15px;
+                        font-size: 14px;
                         letter-spacing: -0.01em;
                         word-break: keep-all;
                     }}
@@ -184,7 +184,7 @@ class EmailSender:
                     }}
                     
                     .header-title {{
-                        font-size: 1.35rem;
+                        font-size: 1.5rem;
                         font-weight: 800;
                         color: white;
                         margin: 0;
@@ -192,6 +192,31 @@ class EmailSender:
                         align-items: center;
                         gap: 0.75rem;
                         letter-spacing: -0.03em;
+                    }}
+                    
+                    .logo-text {{
+                        color: #F0F4FF;
+                        font-weight: 900;
+                        display: flex;
+                        align-items: center;
+                        gap: 0.5rem;
+                    }}
+                    
+                    .divider {{
+                        color: rgba(255, 255, 255, 0.3);
+                        font-weight: 300;
+                    }}
+                    
+                    .report-type {{
+                        color: rgba(255, 255, 255, 0.9);
+                        font-weight: 600;
+                    }}
+                    
+                    .header-subtitle {{
+                        margin-top: 0.75rem;
+                        color: rgba(255, 255, 255, 0.7);
+                        font-size: 0.95rem;
+                        font-weight: 500;
                     }}
                     
                     .header-date {{
@@ -214,7 +239,7 @@ class EmailSender:
                     }}
                     
                     .content-container {{
-                        padding: 1.5rem;
+                        padding: 0.5rem 1.5rem 0.5rem;
                         max-width: 100%;
                         line-height: 1.8;
                         background: #FFFFFF;
@@ -232,24 +257,34 @@ class EmailSender:
                     }}
                     
                     h1 {{ 
-                        font-size: 1.3rem;
+                        font-size: 1.2rem;
                         margin: 2rem 0 1.5rem;
                     }}
                     
                     h2 {{ 
-                        font-size: 1.2rem;
-                        margin: 2.5rem 0 1.5rem;
+                        font-size: 1.1rem;
+                        margin: 2rem 0 1.5rem;
                         padding-bottom: 0.5rem;
                         border-bottom: 2px solid #E2E8F0;
                     }}
                     
                     h3 {{
-                        font-size: 1.1rem;
+                        font-size: 1rem;
                         margin: 2rem 0 1rem;
                         color: #1E293B;
                     }}
 
                     h4 {{
+                        font-size: 1rem;
+                        margin: 0.75rem 0 0.5rem;
+                        color: #1E293B;
+                    }}
+                    h5 {{
+                        font-size: 1rem;
+                        margin: 0.75rem 0 0.5rem;
+                        color: #1E293B;
+                    }}
+                    h6 {{
                         font-size: 1rem;
                         margin: 0.75rem 0 0.5rem;
                         color: #1E293B;
@@ -275,7 +310,7 @@ class EmailSender:
                     
                     .highlighted-code-container .code-content {{
                         font-family: 'D2Coding', 'JetBrains Mono', Consolas, monospace;
-                        font-size: 1rem;
+                        font-size: 0.9rem;
                         color: #F1F5F9;
                         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
                         line-height: 1.6;
@@ -284,7 +319,7 @@ class EmailSender:
                     .highlighted-code-container .code-content pre,
                     .highlighted-code-container .code-content pre code,
                     .highlighted-code-container .code-content pre span {{
-                        font-size: 1rem !important;
+                        font-size: 0.9rem !important;
                         line-height: 1.6 !important;
                         white-space: pre-wrap !important;
                     }}
@@ -416,12 +451,13 @@ class EmailSender:
                 <div class="wrapper">
                     <div class="header">
                         <h1 class="header-title">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M12 3L1 9L12 15L21 10.09V17H23V9L12 3Z" fill="white"/>
-                                <path d="M19 17V12.67L12 16.13L3 11.13V17C3 18.66 7.03 20 12 20C16.97 20 21 18.66 21 17" fill="white" fill-opacity="0.5"/>
-                            </svg>
-                            코드 분석 리포트
+                            <span class="logo-text">⚡️ CodeCast</span>
+                            <span class="divider">&nbsp;|&nbsp;</span>
+                            <span class="report-type">코드 분석 리포트</span>
                         </h1>
+                        <div class="header-subtitle">
+                            실시간 코드 모니터링 및 AI 기반 분석
+                        </div>
                         <div class="header-date">
                             {datetime.now().strftime("%Y년 %m월 %d일 %H:%M")} 생성
                         </div>
@@ -438,6 +474,26 @@ class EmailSender:
         return html_content
 
     def _convert_markdown_to_html(self, markdown_text: str):
+        def replace_inline_backticks(text: str) -> str:
+            """코드 블록 내부의 백틱 3개를 작은따옴표 3개로 치환"""
+            lines = text.split("\n")
+            in_code_block = False
+            result = []
+
+            for line in lines:
+                if line.strip().startswith("```"):
+                    in_code_block = not in_code_block
+                    result.append(line)
+                elif in_code_block and "```" in line:
+                    # 코드 블록 내부에서 백틱이 있는 경우 작은따옴표로 치환
+                    result.append(line.replace("```", "'''"))
+                else:
+                    result.append(line)
+
+            return "\n".join(result)
+
+        # 코드 블록 추출 전에 백틱 치환 처리
+        markdown_text = replace_inline_backticks(markdown_text)
         replaced_text, code_blocks = self._extract_code_blocks(markdown_text)
 
         def extract_agent_sections(text):
@@ -460,6 +516,7 @@ class EmailSender:
             "tables": None,
             "break-on-newline": True,
             "header-ids": None,
+            # "preserve-tabs": True,
         }
 
         html = markdown2.markdown(replaced_text, extras=extras)

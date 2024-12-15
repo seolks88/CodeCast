@@ -33,18 +33,26 @@ class LLMManager:
                 "temperature": 0.7,
                 "top_p": 0.95,
                 "top_k": 40,
-                "max_output_tokens": 4000,
+                "max_output_tokens": 2048,
             }
-            self._cleanup_context = genai.cleanup_context()
-
-    async def __aenter__(self):
-        if self.is_gemini:
-            await self._cleanup_context.__aenter__()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.is_gemini:
-            await self._cleanup_context.__aexit__(exc_type, exc_val, exc_tb)
+            self.safety_settings = [
+                {
+                    "category": "HARM_CATEGORY_HARASSMENT",
+                    "threshold": "BLOCK_NONE",
+                },
+                {
+                    "category": "HARM_CATEGORY_HATE_SPEECH",
+                    "threshold": "BLOCK_NONE",
+                },
+                {
+                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "threshold": "BLOCK_NONE",
+                },
+                {
+                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    "threshold": "BLOCK_NONE",
+                },
+            ]
 
     def _create_messages(self, prompt: str, system_prompt: Optional[str] = None) -> list:
         messages = []

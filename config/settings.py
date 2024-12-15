@@ -120,8 +120,3 @@ class Config:
 
     # OpenAI API 키 추가
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-    # gRPC 관련 환경 변수 설정
-    os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "false"
-    os.environ["GRPC_POLL_STRATEGY"] = "epoll1"
-    os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"

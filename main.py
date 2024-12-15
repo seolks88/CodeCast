@@ -1,60 +1,59 @@
-# main.py
-import os
-import sys
 import asyncio
-from file_watcher.differ import FileChangeHandler
-from file_watcher.state_manager import DatabaseManager
-from config.settings import Config
+import os
+from datetime import datetime
+import importlib.util
+import sys
 
 
-def is_subdirectory(path1, path2):
-    """Check if path1 is a subdirectory of path2 or the same directory."""
-    path1 = os.path.abspath(path1)
-    path2 = os.path.abspath(path2)
-    return path1.startswith(path2)
+async def run_file_scanner():
+    print("\n=== 파일 스캔 시작 ===")
+    try:
+        scanner = importlib.import_module("file_scanner")
+        await scanner.main()
+    except Exception as e:
+        print(f"파일 스캔 중 오류 발생: {e}")
+        sys.exit(1)
 
 
-def get_unique_directories(directories):
-    """Return a list of unique directories without duplicates."""
-    abs_dirs = [os.path.abspath(d) for d in directories]
-    sorted_dirs = sorted(abs_dirs, key=len, reverse=True)
+async def run_report_workflow():
+    print("\n=== 리포트 생성 시작 ===")
+    try:
+        workflow = importlib.import_module("report_workflow")
+        await workflow.run_graph()
+    except Exception as e:
+        print(f"리포트 생성 중 오류 발생: {e}")
+        sys.exit(1)
 
-    unique_dirs = []
-    for current_dir in sorted_dirs:
-        is_subdirectory_of_existing = any(is_subdirectory(current_dir, existing_dir) for existing_dir in unique_dirs)
-        if not is_subdirectory_of_existing:
-            unique_dirs.append(current_dir)
 
-    return unique_dirs
+async def run_send_report():
+    print("\n=== 이메일 발송 시작 ===")
+    try:
+        sender = importlib.import_module("send_report")
+        await sender.main()
+    except Exception as e:
+        print(f"이메일 발송 중 오류 발생: {e}")
+        sys.exit(1)
 
 
 async def main():
-    unique_dirs = get_unique_directories(Config.WATCH_DIRECTORIES)
+    start_time = datetime.now()
+    print(f"작업 시작 시간: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    for watch_dir in unique_dirs:
-        if not os.path.exists(watch_dir):
-            try:
-                os.makedirs(watch_dir)
-                print(f"Created watch directory at {watch_dir}")
-            except Exception as e:
-                print(f"Error creating directory {watch_dir}: {e}")
-                sys.exit(1)
+    try:
+        # 순차적으로 실행
+        await run_file_scanner()
+        await run_report_workflow()
+        await run_send_report()
 
-    print("Starting scan of directories")
-    print(f"Data retention period: {Config.DATA_RETENTION_PERIOD}")
-    print(f"Directories to scan: {unique_dirs}")
+        end_time = datetime.now()
+        duration = end_time - start_time
+        print(f"\n=== 전체 작업 완료 ===")
+        print(f"소요 시간: {duration}")
+        print(f"완료 시간: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    db_manager = DatabaseManager(Config.DB_PATH)
-    await db_manager.initialize()
-
-    handler = FileChangeHandler()
-
-    for watch_dir in unique_dirs:
-        print(f"\nProcessing directory: {watch_dir}")
-        await handler.scan_directory(watch_dir, db_manager)
-
-    await db_manager.cleanup_old_data()
-    print("All directory scans completed")
+    except Exception as e:
+        print(f"\n❌ 오류 발생: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

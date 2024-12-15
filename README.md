@@ -67,26 +67,61 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 `.env` 파일에 필요한 API 키와 설정을 입력하세요.
+네, 이메일 설정 부분을 더 자세하고 명확하게 수정해보겠습니다:
 
-3. **워치 디렉토리 준비**
+```markdown:README.md
+2. **이메일 설정**
 ```bash
-mkdir watched_directory
+cp .env.example .env
 ```
-분석하고자 하는 소스 파일을 이 디렉토리에 위치시킵니다.
 
-### 실행
+`.env` 파일에 다음 이메일 관련 설정을 입력하세요:
 
-**기본 실행**
+**Gmail 설정 방법:**
+1. Google 계정 설정 > 보안
+2. 2단계 인증 활성화
+3. 앱 비밀번호 생성:
+   - '앱 비밀번호' 선택
+   - 앱 선택: 기타 (Custom name)
+   - 이름 입력: "CodeCast"
+   - 생성된 16자리 비밀번호를 복사
+
+**환경 변수 설정:**
+```bash
+CODECAST_SMTP_SERVER=smtp.gmail.com
+CODECAST_SMTP_PORT=587
+CODECAST_SENDER_EMAIL=your.email@gmail.com    # Gmail 주소
+CODECAST_SENDER_PASSWORD=xxxx xxxx xxxx xxxx  # 생성된 앱 비밀번호
+CODECAST_RECIPIENT_EMAIL=your.email@gmail.com  # 받는 사람 이메일
+```
+
+> 💡 **참고**: Gmail의 경우 일반 계정 비밀번호가 아닌, 반드시 앱 비밀번호를 사용해야 합니다.
+
+### 실행 방법
+
+현재 버전은 macOS 환경에서만 테스트되었으며 향후 윈도우 버전도 호환 예정입니다.
+
+1. **일회성 실행**
 ```bash
 python main.py
 ```
-파일 변경을 감지하고 자동으로 분석을 시작합니다.
 
-**리포트 이메일 전송** (선택사항)
+2. **자동 실행 설정 (crontab 사용)**
+매일 아침 9시에 자동으로 실행되도록 설정하려면:
+
 ```bash
-python send_report.py
+# crontab 편집
+crontab -e
+
+# 다음 라인 추가 (매일 아침 9시 실행)
+0 9 * * * cd /프로젝트/경로 && /usr/bin/python3 main.py
 ```
-SMTP 설정 후 이메일로 리포트를 받아볼 수 있습니다.
+
+> 🔄 **향후 업데이트 예정**
+> - 윈도우 환경 지원
+> - 정해진 시간에 로컬 PC가 꺼져있는 경우에도 하루에 한번 알림을 줄 수 있도록 대응
+
+
 
 ### 추가 기능
 
@@ -99,11 +134,6 @@ touch habits.txt
 **커스터마이징**
 - `ai_analyzer/prompt_manager.py`를 수정하여 에이전트의 성격과 분석 방식을 조정할 수 있습니다.
 
-### 테스트
-```bash
-pytest
-```
-기본적인 안정성 테스트를 실행합니다.
 
 ## 🤝 기여하기
 - 버그 리포트와 기능 제안은 GitHub 이슈를 이용해 주세요.
